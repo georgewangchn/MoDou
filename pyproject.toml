@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "asr-runtime"
 version = "3.0.0"
-description = "AI Software Runtime — a cybernetics-based autonomous software engineering convergence runtime"
+description = "MoDou (墨斗) Assurance Runtime — current delivery: Software Engineering Domain Plugin (cybernetics-based AI software engineering convergence)"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.11"
 authors = [
     {name = "George Wang", email = "george@senlinpubu.top"},
 ]
-keywords = ["ai", "llm", "cybernetics", "code-generation", "convergence", "opencode"]
+keywords = ["ai", "llm", "cybernetics", "code-generation", "convergence", "opencode", "modou", "assurance-runtime", "deviation-analysis"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

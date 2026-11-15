@@ -1,16 +1,23 @@
-# AI Software Runtime（ASR）
-## 基于控制论的自治式 AI 软件工程收敛运行时
+# MoDou（墨斗）· Assurance Runtime
+## Software Engineering Domain Plugin — 基于控制论的自治式 AI 软件工程收敛能力
 
-**工程实践报告**
+**工程实践报告（原 ASR 技术报告）**
+
+---
+
+> **更名说明（2026-11-15）**：项目正式名称已改为 **MoDou（墨斗）**，目标定位为 **Assurance Runtime（执行保证运行时）**。
+> 本报告是 v2.0 时期的历史工程记录，正文中的 `ASR` / `ASR v1.x` / `ASR+` 为当时的系统代号与版本标识，保留不改，以维持数据与叙述的原始口径。
+> 本报告描述的能力属于 Software Engineering Domain Plugin；Assurance Core、Analyzer / Verifier 插件体系与 DEP 契约属于目标架构（Planned），本仓库尚未实现。
 
 ---
 
 | 项目信息 | |
 |---------|--|
-| 项目名称 | AI Software Runtime（ASR）—— 基于控制论的自治式 AI 软件工程收敛运行时 |
+| 项目名称 | MoDou（墨斗）—— Assurance Runtime（执行保证运行时） |
+| 本仓库当前交付 | Software Engineering Domain Plugin：基于控制论的自治式 AI 软件工程收敛能力 |
 | 赛道方向 | AI + 研发（考察规范驱动开发、多模态情境智能及研发效率提升能力） |
 | 报告版本 | v2.0 |
-| 系统版本 | ASR v2.0（含控制论优化，同步至 2026-07-06） |
+| 系统版本 | ASR v2.0（含控制论优化，同步至 2026-07-06；历史版本代号保留） |
 
 ---
 
@@ -25,6 +32,7 @@
 | v1.4 | 2026-05-28 | 统一 Agent prompt 为流水线模型；Tester 每轮生成/更新测试用例；Analyzer 改为 plain text 输出 |
 | v1.5 | 2026-05-29 | 集成 oh-my-openagent 多智能体编排，移除 CI 模式抑制；修复非 UTF-8 文件解码崩溃 |
 | **v2.0** | **2026-07-06** | **控制论优化**：引入显式控制指标（ConvergenceMetrics）、RepairMode 状态机、Patch 限幅与 Formal Guards、振荡检测、Circuit Breaker、结构化 Analyzer、Failure Fingerprint、FINAL_VERIFICATION 模式、Bypass 检测升级为硬 Guard；经六轮第一性原理推演验证 |
+| **v2.1** | **2026-11-15** | **品牌更名**：项目正式名称改为 MoDou（墨斗），目标定位对齐 Assurance Runtime；仅更新报告头部与更名说明，正文中的历史版本代号、技术标识与实验数据保留不改 |
 
 ---
 
@@ -199,7 +207,7 @@ ASR 是一个三层架构的自治运行时，核心思路是**把 AI 当执行�
 │                 执行层（oh-my-openagent + OpenCode）               │
 │  oh-my-openagent 多智能体编排：IntentGate→Prometheus(规划)→       │
 │  Metis(缺口分析)→Momus(审查)→Atlas(分发)→Sisyphus(执行)          │
-│  opencode run --format json --dir <project> [--session ID]        │
+│  opencode run --format json [--auto] [--session ID] (cwd=project) │
 └──────────────────────────────────────────────────────────────────┘
 
 ┌──────────────────────────────────────────────────────────────────┐
@@ -654,14 +662,16 @@ while not dag.all_done():
 
 ### 5.10 OpenCode 后端委派机制
 
-所有 ASR Agent 通过 subprocess 调用 OpenCode CLI 完成实际工作：
+所有 ASR Agent 通过 subprocess 调用 OpenCode CLI 完成实际工作（opencode 2.x 语义）：
 
 | 函数 | 用途 | 调用方式 |
 |------|------|---------|
-| `opencode_completion(prompt, project_dir)` | TesterAgent/AnalyzerAgent 使用 | `opencode run --model <model> --format json --dir <dir>` |
-| `opencode_diff(prompt, project_dir, session_id)` | BuilderAgent 使用 | 支持 `--continue` 模式（session 延续），通过 `git diff --cached HEAD` 提取 unified diff |
+| `opencode_completion(prompt, project_dir)` | TesterAgent/AnalyzerAgent 使用 | `opencode run --format json --auto`，工作目录经 subprocess `cwd` 传递（2.x 已移除 `--dir`） |
+| `opencode_diff(prompt, project_dir, session_id)` | BuilderAgent 使用 | `--session <id>` 单独续接 session（2.x 已移除 `--continue` 组合用法），通过 `git diff --cached HEAD` 提取 unified diff |
 
-**BuilderAgent 的 Session 延续**：首次调用创建新 session，后续调用传入 session_id + `--continue` → 在同一 session 中继续，Builder 能"记住"之前的修改历史。
+**BuilderAgent 的 Session 延续**：首次调用创建新 session，后续调用传入 `--session <id>` → 在同一 session 中继续（2.x 语义：`--session` 即"续接或创建"），Builder 能"记住"之前的修改历史。
+
+**权限模型（opencode 2.x）**：`--dangerously-skip-permissions` 已移除（会使 CLI 挂死在永不出现的交互提示上）。ASR 默认传 `--auto`（自动批准未被显式拒绝的权限）；设置 `ASR_OPENCODE_AUTO=0` 可改用 per-repo `opencode.json` 的 `permission` 白名单（`edit: allow` / `bash: {"*": "allow", "rm -rf *": "deny"}`）。
 
 ### 5.11 Sandbox 隔离执行
 

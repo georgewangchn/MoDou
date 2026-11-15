@@ -2,14 +2,22 @@
 
 <br>
 
-# ⚙️ ASR — AI Software Runtime
+# 🪵 MoDou（墨斗）· Assurance Runtime
 
-### 基于控制论的自治式 AI 软件工程收敛运行时
+### 执行保证运行时 — 偏差识别、结果验证与纠偏反馈
+
+**当前交付：Software Engineering Domain Plugin（基于控制论的 AI 软件工程收敛能力）**
 
 <br>
 
 从一份 `DESIGN.md` 出发，自动生成完整工程项目代码，<br>
 通过 Builder → Tester → Analyzer 闭环迭代，持续收敛直到测试全通过且规格对齐。
+
+<br>
+
+> **能力状态**：上述控制论收敛能力为 **Implemented**（代码 + 单元测试）；
+> Assurance Core、Analyzer / Verifier 插件体系与 DEP 契约为 **Planned**，本仓库尚未实现。
+> 详见下文「产品定位、改名范围与能力边界」。
 
 <br>
 
@@ -32,13 +40,13 @@
 > ### 💡 核心理念
 > **一个弱模型 + 强约束系统 > 一个强模型 + 无约束系统**
 >
-> 不需要 Claude，不需要 GPT 配额。ASR 把 LLM 当执行器（不可控、有随机性），用控制论闭环驱动它稳定收敛——任意 OpenAI 兼容接口即可运行。
+> 不需要 Claude，不需要 GPT 配额。当前软件工程插件把 LLM 当执行器（不可控、有随机性），用控制论闭环驱动它稳定收敛——任意 OpenAI 兼容接口即可运行。
 
 ---
 
 ## ✨ 核心特性
 
-ASR 本质是一个**控制论闭环**——把 LLM 当执行器，用反馈驱动它稳定收敛：
+当前交付的软件工程领域插件本质是一个**控制论闭环**——把 LLM 当执行器，用反馈驱动它稳定收敛：
 
 ```mermaid
 flowchart LR
@@ -55,7 +63,7 @@ flowchart LR
 
 ### 🔒 五重控制论保障
 
-| 控制论要求 | ASR 实现机制 |
+| 控制论要求 | 当前实现机制 |
 |:---|:---|
 | 🎯 **反馈可靠** | `test_pass_rate` 作为地面真值，Analyzer 语义信号降级为辅助 |
 | 🔧 **执行器可约束** | RepairMode 状态机（6 模式）+ Patch 限幅 + Formal Guards 硬约束 |
@@ -82,7 +90,7 @@ flowchart LR
 flowchart LR
     D["📋 DESIGN.md<br/>规格文档"] --> RT
 
-    subgraph RT["⚙️ ASR 收敛运行时"]
+    subgraph RT["⚙️ 软件工程收敛插件（当前实现）"]
         direction LR
         B["🔧 Builder<br/>生成 / 修复"] --> T["🧪 Tester<br/>运行测试"] --> A["🔍 Analyzer<br/>对比规格"]
         A -->|仍有偏差| B
@@ -149,7 +157,7 @@ INITIAL_GENERATION → TEST_FIX ←───────────────
 | Node.js | 18+ | opencode CLI 依赖 |
 | opencode CLI | >= 1.15 | LLM 调用后端 |
 
-### Step 1 — 安装 ASR
+### Step 1 — 安装 MoDou
 
 ```bash
 git clone https://github.com/georgewangchn/AI-Software-Runtime.git
@@ -159,6 +167,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e .
 ```
+
+> GitHub 仓库名、包名 `asr-runtime` 与 CLI 命令 `asr` 暂沿用原技术标识，本次改名只涉及品牌与产品定位。
+> 仓库名迁移需单独评估 GitHub 重定向、已有 clone 地址与外链，见下文「改名范围」。
 
 ### Step 2 — 安装 opencode CLI
 
@@ -173,11 +184,11 @@ opencode --version
 asr init --project my_project
 ```
 
-自动生成 `DESIGN.md`（规格模板）+ `.opencode/config.json`（LLM 配置模板）+ `asr_config.yaml`。
+自动生成 `DESIGN.md`（规格模板）+ `opencode.json`（LLM 配置模板）+ `asr_config.yaml`。
 
 ### Step 4 — 配置 LLM
 
-编辑 `my_project/.opencode/config.json`，填入你的 LLM provider：
+编辑 `my_project/opencode.json`（opencode 2.x per-repo 配置），填入你的 LLM provider：
 
 ```json
 {
@@ -216,7 +227,7 @@ asr doctor --project my_project
 asr run --project my_project --max-iterations 20
 ```
 
-ASR 会自动：Builder 生成代码 → Tester 验证 → Analyzer 对比规格 → 循环修复直到收敛。
+当前插件会自动：Builder 生成代码 → Tester 验证 → Analyzer 对比规格 → 循环修复直到收敛。
 
 ```
 ASR 收敛运行时 [直接模式]
@@ -261,6 +272,58 @@ asr/
 
 ---
 
+## 🧭 产品定位、改名范围与能力边界
+
+### 产品定位
+
+依据《三 Runtime 统一体系最终方案》Final 1.0，本项目正式名称为 **MoDou（墨斗）**，定位为 **Assurance Runtime（执行保证运行时）**：以决策契约、执行契约、验收标准和证据为依据，独立识别偏差、诊断原因、验证结果、提出纠偏建议并复验。
+
+| 系统 | Runtime | 职责 |
+|---|---|---|
+| MOSS | Decision Runtime | 决策形成、治理、版本化与反馈接收 |
+| OuSheng | Organization Runtime | 任务组织、Agent 协作、执行与证据提交 |
+| **MoDou（墨斗）** | **Assurance Runtime** | **独立评估、偏差诊断、结果验证、纠偏反馈** |
+
+三者通过 DEP（Decision Execution Protocol）交换标准化契约与事件。LLM 是语义理解与辅助诊断的能力组件，不是第四个 Runtime，也不拥有最终验证裁决权。
+
+### 当前实现状态
+
+本仓库当前交付的是 **Software Engineering Domain Plugin**，不是 Assurance Core。按方案文档 §11.3 统一标记：
+
+| 能力 | 状态 | 说明 |
+|---|---|---|
+| Builder / Tester / Analyzer 收敛闭环 | Implemented | 代码 + `tests/` 单元测试 |
+| RepairMode、Patch 限幅、Formal Guards、振荡检测、Circuit Breaker、退化回滚、Hysteresis、事件回放 | Implemented | 控制论收敛机制，见技术报告 v2.0 |
+| Assurance Core（Contract Registry / Deviation Engine / Verification Engine / Feedback Controller 等） | Planned | 方案文档 §6.2 目标架构，本仓库未实现 |
+| Analyzer / Verifier Plugin SDK、Assessment Contract、DEP 契约 | Planned | 方案文档 §6.4–§6.5、§7，本仓库未实现 |
+| 与 MOSS / OuSheng 的跨系统集成 | Planned | 方案文档 §10 阶段 5，本仓库未实现 |
+
+Implemented 依据代码与测试标注，不代表已完成生产可用性、覆盖率或性能验证。
+
+### 改名范围（2026-11-15）
+
+本次为**品牌层改名**，不改技术标识。依据方案文档 §11.1「品牌更名不要求立即改动所有技术标识」与 §14「不为更名而删除原 ASR 已有的软件工程收敛能力」。
+
+| 类别 | 处理 | 具体项 |
+|---|---|---|
+| 已改 | 品牌与产品定位 | 项目名、README 标题与定位、技术报告头部、演示页标题、包描述、脚本与配置注释 |
+| 保留 | Python 包与 API | `asr/` 包目录、`from asr ...` import、`ASRConfig` / `ASRController` / `ASRRuntime` / `ASRLogger` 类名 |
+| 保留 | CLI 与配置契约 | `asr` 命令、`asr_config.yaml`、`ASR_*` 环境变量、`.asr_sandbox/`、`.runtime/`、包名 `asr-runtime`、egg-info |
+| 保留 | 外部引用 | GitHub 仓库名 `AI-Software-Runtime`、`git clone` 地址、GitHub Pages 演示 URL、技术报告文件名 |
+| 保留 | 历史数据 | 演示报告中的 `ASR 初版` / `ASR+ 升级版` / `ASR v1.2` / `ASR v1.3` 等当时版本代号 |
+| 待迁移 | 用户可见输出 | `asr/cli/main.py` 中 `ASR 收敛运行时` 等输出字符串，需与测试、文档示例同步后再改 |
+| 待迁移 | 仓库名 | 需单独评估 GitHub 重定向、已有 clone 地址、CI 与外链，评估通过后由仓库所有者操作 |
+
+保留理由：上述技术标识被 import 路径、已安装包、用户脚本、历史工程数据和外部链接引用；一次性替换属于重构而非改名，会破坏兼容性，且 GitHub 侧重定向无法在本地完成。
+
+### 术语
+
+- **MoDou（墨斗）**：本项目正式名称。方案文档写作全大写 `MODOU`，两者指同一实体，本仓库统一采用 `MoDou（墨斗）`。
+- **ASR / AI Software Runtime**：历史项目名；在代码、CLI、环境变量与历史实验数据中作为技术标识继续保留。
+- **Assurance Runtime**：目标产品定位；不代表当前仓库已实现方案文档 §6 的全部 Core 能力。
+
+---
+
 ## 📚 参考
 
 <details>
@@ -293,7 +356,7 @@ asr/
 
 | 文档 | 说明 |
 |---|---|
-| 📖 [技术报告 (v2.0)](./AI%20Software%20runtime%28ASR%29技术报告.md) | 系统架构设计、控制论优化体系、端到端验证、DAG 调度、事件总线 |
+| 📖 [技术报告 (v2.0)](./AI%20Software%20runtime%28ASR%29技术报告.md) | 原 ASR 技术报告：系统架构设计、控制论优化体系、端到端验证、DAG 调度、事件总线。文件名为历史外链，保留不改 |
 | 💡 [原始构想](./Supervise-Agent：有监督长任务自动化软件工程系统.md) | 项目最初想法：分层裁决 + 多Agent协同 + 工程约束 |
 | 🌐 [在线演示](https://georgewangchn.github.io/AI-Software-Runtime/) | 系统效果验证测试报告，对比四种方案的实际生成效果 |
 

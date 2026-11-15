@@ -1,5 +1,5 @@
 #!/bin/bash
-# ASR 启动脚本示例
+# MoDou（墨斗）启动脚本示例（技术标识 asr / ASR_* 保留）
 # 复制此文件并修改为你自己的路径和模型配置
 
 # ---- 路径配置 ----
@@ -13,12 +13,12 @@ ASR_ROOT=$(cd "$(dirname "$0")" && pwd)
 # export FEASIBILITY_LLM_MODEL=your-model-name
 # export FEASIBILITY_LLM_CONTEXT=131072
 
-# ---- ASR 运行参数 ----
+# ---- 运行参数（ASR_* 为历史环境变量名，保留兼容）----
 export ASR_OPENCODE_TIMEOUT="144000"
 export ASR_VERBOSE="1"
 
 cd "$ASR_ROOT"
 
-# 启动 ASR（将 DESIGN.md 复制到目标项目目录后运行）
+# 启动 MoDou 软件工程插件（将 DESIGN.md 复制到目标项目目录后运行）
 # cp "$DEVDIR/DESIGN.md" "$DEVDIR/your_project/DESIGN.md"
 python -m asr.cli.main run --project "$DEVDIR/your_project" --max-iterations 20
