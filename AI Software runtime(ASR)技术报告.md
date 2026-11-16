@@ -1,20 +1,22 @@
 # MoDou（墨斗）· Assurance Runtime
-## Software Engineering Domain Plugin — 基于控制论的自治式 AI 软件工程收敛能力
+## 独立验收运行时 — Tester 确定性验证 + Analyzer 偏差分析
 
 **工程实践报告（原 ASR 技术报告）**
 
 ---
 
 > **更名说明（2026-11-15）**：项目正式名称已改为 **MoDou（墨斗）**，目标定位为 **Assurance Runtime（执行保证运行时）**。
+> **价值转向（2026-11-16）**：MoDou 的价值重心从 Builder 代码生成转向 **Tester / Analyzer 的独立偏差分析与验收**。Builder 保留为被评估的软件工程领域插件，不参与评估判定；新增 `asr assess` 提供只读验证与结构化验收结论。
 > 本报告是 v2.0 时期的历史工程记录，正文中的 `ASR` / `ASR v1.x` / `ASR+` 为当时的系统代号与版本标识，保留不改，以维持数据与叙述的原始口径。
-> 本报告描述的能力属于 Software Engineering Domain Plugin；Assurance Core、Analyzer / Verifier 插件体系与 DEP 契约属于目标架构（Planned），本仓库尚未实现。
+> 正文描述的 Builder → Tester → Analyzer 收敛链路属于 Software Engineering Domain Plugin；独立评估能力见 README 与 `asr/assurance.py`。Assurance Core 与 DEP 契约属于目标架构（Planned）。
 
 ---
 
 | 项目信息 | |
 |---------|--|
 | 项目名称 | MoDou（墨斗）—— Assurance Runtime（执行保证运行时） |
-| 本仓库当前交付 | Software Engineering Domain Plugin：基于控制论的自治式 AI 软件工程收敛能力 |
+| 本仓库当前交付 | 独立评估引擎（`asr assess`）+ Software Engineering Domain Plugin（控制论收敛能力） |
+| 价值重心 | Tester 确定性验证 + Analyzer 偏差分析 → 独立验收结论 |
 | 赛道方向 | AI + 研发（考察规范驱动开发、多模态情境智能及研发效率提升能力） |
 | 报告版本 | v2.0 |
 | 系统版本 | ASR v2.0（含控制论优化，同步至 2026-07-06；历史版本代号保留） |
@@ -33,6 +35,7 @@
 | v1.5 | 2026-05-29 | 集成 oh-my-openagent 多智能体编排，移除 CI 模式抑制；修复非 UTF-8 文件解码崩溃 |
 | **v2.0** | **2026-07-06** | **控制论优化**：引入显式控制指标（ConvergenceMetrics）、RepairMode 状态机、Patch 限幅与 Formal Guards、振荡检测、Circuit Breaker、结构化 Analyzer、Failure Fingerprint、FINAL_VERIFICATION 模式、Bypass 检测升级为硬 Guard；经六轮第一性原理推演验证 |
 | **v2.1** | **2026-11-15** | **品牌更名**：项目正式名称改为 MoDou（墨斗），目标定位对齐 Assurance Runtime；仅更新报告头部与更名说明，正文中的历史版本代号、技术标识与实验数据保留不改 |
+| **v2.2** | **2026-11-16** | **价值转向**：价值重心由 Builder 生成收敛改为 Tester / Analyzer 独立偏差分析与验收；新增只读评估引擎 `asr/assurance.py` 与 CLI 子命令 `asr assess`；GitHub 仓库迁移为 `MoDou` |
 
 ---
 
