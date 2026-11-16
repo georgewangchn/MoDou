@@ -24,7 +24,7 @@
 [![Version](https://img.shields.io/badge/version-2.0-4CAF50?style=flat-square)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#)
 [![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](#)
-[![Tests](https://img.shields.io/badge/tests-226%20passed-brightgreen?style=flat-square)](#)
+[![Tests](https://img.shields.io/badge/tests-252%20passed-brightgreen?style=flat-square)](#)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-ff69b4?style=flat-square)](#)
 
 <br>
@@ -265,7 +265,7 @@ asr/
 │   ├── events/                       # 20 种事件类型 + EventStore
 │   ├── dag/                          # Task DAG 并行执行
 │   └── runtime.py                    # 运行时入口
-├── tests/                            # 单元测试（226 passed）
+├── tests/                            # 单元测试（252 passed）
 ├── pyproject.toml                    # 包定义 + asr CLI 入口
 └── .env.example                      # 环境变量配置模板
 ```
@@ -357,7 +357,7 @@ Implemented 依据代码与测试标注，不代表已完成生产可用性、�
 | 文档 | 说明 |
 |---|---|
 | 📖 [技术报告 (v2.0)](./AI%20Software%20runtime%28ASR%29技术报告.md) | 原 ASR 技术报告：系统架构设计、控制论优化体系、端到端验证、DAG 调度、事件总线。文件名为历史外链，保留不改 |
-| 💡 [原始构想](./Supervise-Agent：有监督长任务自动化软件工程系统.md) | 项目最初想法：分层裁决 + 多Agent协同 + 工程约束 |
+| 💡 原始构想 | 《Supervise-Agent：有监督长任务自动化软件工程系统》—— 项目最初想法：分层裁决 + 多 Agent 协同 + 工程约束。文档已从仓库移除，故不提供链接 |
 | 🌐 [在线演示](https://georgewangchn.github.io/AI-Software-Runtime/) | 系统效果验证测试报告，对比四种方案的实际生成效果 |
 
 ---
