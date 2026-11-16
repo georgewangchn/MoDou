@@ -50,6 +50,8 @@ class ConvergenceConfig(BaseModel):
     incremental_test_interval: int = 3
     # P1-2: 自适应限幅 — 是否启用动态限幅
     adaptive_limits: bool = True
+    # P1-1: 区域分化 Agent — 是否启用 Builder 区域分化
+    zone_specialized_builder: bool = False
 
 
 class RuntimeConfig(BaseModel):

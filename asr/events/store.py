@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 from filelock import FileLock
@@ -76,6 +77,61 @@ class EventStore:
 
     def replay_events(self, task_id: str) -> list[Event]:
         return self.get_task_events(task_id)
+
+    def get_causal_chain(self, event_id: str) -> list[Event]:
+        """P0-1: Trace the causal chain backwards from a given event.
+
+        Follows caused_by links to reconstruct the full causal ancestry.
+        Returns events in reverse-chronological order (target first, root last).
+        """
+        chain: list[Event] = []
+        visited: set[str] = set()
+        current_id = event_id
+        while current_id and current_id not in visited:
+            visited.add(current_id)
+            try:
+                evt = self.read_event(current_id)
+                chain.append(evt)
+                current_id = evt.caused_by
+            except (FileNotFoundError, json.JSONDecodeError):
+                break
+        return chain
+
+    def get_superseded_chain(self, event_id: str) -> list[Event]:
+        """P0-1: Trace the supersession chain forward from a given event.
+
+        Finds all events that supersede the given event, in order.
+        Useful for tracking how a decision evolved over iterations.
+        """
+        task_events = self.get_task_events(self.read_event(event_id).task_id)
+        chain: list[Event] = []
+        current_id = event_id
+        while current_id:
+            next_supersede = None
+            for evt in task_events:
+                if evt.supersedes == current_id:
+                    chain.append(evt)
+                    next_supersede = evt.event_id
+                    break
+            current_id = next_supersede
+        return chain
+
+    def get_events_by_type(self, task_id: str, event_type: EventType) -> list[Event]:
+        """P0-1: Filter events by type for a given task."""
+        return [e for e in self.get_task_events(task_id) if e.type == event_type]
+
+    def get_valid_events(self, task_id: str) -> list[Event]:
+        """P0-1: Return only events that have not been superseded (validity_until is None)."""
+        return [e for e in self.get_task_events(task_id) if e.validity_until is None]
+
+    def mark_superseded(self, event_id: str, by_event_id: str) -> None:
+        """P0-1: Mark an event as superseded by closing its validity interval."""
+        event_path = self._event_dir / f"{event_id}.json"
+        if not event_path.exists():
+            return
+        data = json.loads(event_path.read_text())
+        data["validity_until"] = datetime.now(timezone.utc).isoformat()
+        event_path.write_text(json.dumps(data, indent=2, default=str))
 
     def save_patch(self, task_id: str, diff_text: str, file_path: str) -> str:
         patch_path = self._patches_dir / f"{task_id}_{file_path.replace('/', '_')}.patch"

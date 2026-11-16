@@ -9,6 +9,12 @@ from asr.config.loader import load_config, create_default_config
 from asr.runtime import ASRRuntime
 from asr.agents.llm_tracker import get_agent_tokens
 
+# Exit codes for non-interactive callers (e.g. ousheng cruise mode driving
+# ASR as a subprocess). Keep stable: callers branch on them.
+EXIT_CONVERGED = 0      # all acceptance criteria met, tests green
+EXIT_NOT_CONVERGED = 1  # ran to max iterations / stuck, environment healthy
+EXIT_ENV_ERROR = 2      # opencode CLI missing, bad spec/config, backend crash
+
 
 @click.group()
 def cli():
@@ -23,22 +29,41 @@ def cli():
 @click.option("--decoupled", is_flag=True, help="Use decoupled A2A mode (AgentRunner)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def run(project, spec, config_path, max_iterations, decoupled, verbose):
+    """Run ASR convergence loop (non-interactive; safe to drive as a subprocess).
+
+    Minimal spec YAML (auto-projectable from a work-item description):
+
+      goal: <what to build>
+      acceptance_criteria:
+        - <criterion 1>
+        - <criterion 2>
+
+    Exit codes: 0=converged, 1=not converged (max iterations/stuck),
+    2=environment error (opencode CLI missing, bad spec/config, crash).
+    """
     from asr.controller.convergence import ConvergenceState
 
-    # Pre-flight: check opencode availability
+    # Pre-flight: check opencode availability (environment error → exit 2)
     import shutil as _shutil
     if not _shutil.which("opencode"):
         click.echo("ERROR: 'opencode' CLI not found in PATH.")
         click.echo("Install it:  npm install -g opencode-ai")
-        click.echo("Configure:   asr init --project .  (generates .opencode/config.json template)")
-        raise SystemExit(1)
+        click.echo("Configure:   asr init --project .  (generates opencode.json template)")
+        raise SystemExit(EXIT_ENV_ERROR)
 
-    config = load_config(config_path) if config_path else create_default_config()
+    try:
+        config = load_config(config_path) if config_path else create_default_config()
+    except Exception as exc:
+        click.echo(f"ERROR: failed to load config: {exc}")
+        raise SystemExit(EXIT_ENV_ERROR)
     if max_iterations:
         config.convergence.max_iterations = max_iterations
 
     project_dir = Path(project).resolve()
     spec_path = Path(spec).resolve() if spec else None
+    if spec_path is not None and not spec_path.exists():
+        click.echo(f"ERROR: spec file not found: {spec_path}")
+        raise SystemExit(EXIT_ENV_ERROR)
     runtime = ASRRuntime(config)
 
     mode = "解耦A2A" if decoupled else "直接模式"
@@ -72,28 +97,40 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
 
         return await runtime.run(project_dir, spec_path, use_decoupled=decoupled, progress_callback=progress)
 
-    result = asyncio.run(_run())
+    try:
+        result = asyncio.run(_run())
+    except SystemExit:
+        raise
+    except Exception as exc:
+        click.echo(f"ERROR: ASR runtime crashed: {exc}")
+        raise SystemExit(EXIT_ENV_ERROR)
 
     click.echo()
     dag_info = result.summary.get("dag", {}) if result.summary else {}
     if dag_info:
         click.echo(f"Mode: DAG | Nodes: {dag_info.get('total_nodes', '?')} | Converged: {dag_info.get('converged', '?')} | Stuck: {dag_info.get('stuck', '?')}")
-        if result.state == ConvergenceState.STUCK:
-            click.echo(f"❌ STUCK — {dag_info.get('stuck', 0)} of {dag_info.get('total_nodes', '?')} nodes failed")
+        if result.state == ConvergenceState.CONVERGED:
+            click.echo(f"✅ CONVERGED — all DAG nodes converged")
+            exit_code = EXIT_CONVERGED
         else:
-            click.echo("✅ CONVERGED — all DAG nodes converged")
+            click.echo(f"❌ STUCK — {dag_info.get('stuck', 0)} of {dag_info.get('total_nodes', '?')} nodes failed")
+            exit_code = EXIT_NOT_CONVERGED
         click.echo(f"Iterations: {result.iterations}")
     else:
         _show_progress(result)
         click.echo()
         if result.state == ConvergenceState.CONVERGED:
             click.echo("✅ 已收敛 — 所有测试通过且规格一致")
+            exit_code = EXIT_CONVERGED
         else:
             reason = result.events[-1].payload.get("reason", "unknown") if result.events else "unknown"
             click.echo(f"❌ 卡住 — {reason}")
+            exit_code = EXIT_NOT_CONVERGED
         click.echo(f"迭代轮次: {result.iterations} | 事件数: {len(result.events)}")
         click.echo(f"\n📁 详细日志: .runtime/logs/asr.log")
         click.echo(f"📁 LLM 追踪: .runtime/logs/llm.jsonl")
+
+    raise SystemExit(exit_code)
 
 
 @cli.command(name="run-dag")
@@ -144,10 +181,9 @@ def init(project):
     if not design_path.exists():
         design_path.write_text(_EXAMPLE_DESIGN_MD)
 
-    # Generate opencode config template
-    opencode_dir = project_dir / ".opencode"
-    opencode_dir.mkdir(exist_ok=True)
-    opencode_config = opencode_dir / "config.json"
+    # Generate opencode config template (opencode 2.x: per-repo `opencode.json`
+    # at project root; the `.opencode/` directory is only for agents/commands/plugins)
+    opencode_config = project_dir / "opencode.json"
     if not opencode_config.exists():
         opencode_config.write_text(_EXAMPLE_OPENCODE_CONFIG)
 
@@ -220,7 +256,14 @@ _EXAMPLE_OPENCODE_CONFIG = """\
       }
     }
   },
-  "model": "local/glm-4.7-fp8"
+  "model": "local/glm-4.7-fp8",
+  "permission": {
+    "edit": "allow",
+    "bash": {
+      "*": "allow",
+      "rm -rf *": "deny"
+    }
+  }
 }
 """
 
@@ -247,15 +290,26 @@ def doctor(project):
         click.echo("FAIL (need >= 3.11)")
         ok = False
 
-    # 2. opencode CLI
+    # 2. opencode CLI (version check: ASR requires opencode >= 2)
     click.echo("opencode CLI: ", nl=False)
     opencode_path = _shutil.which("opencode")
     if opencode_path:
+        version = ""
         try:
             ver = _sp.run([opencode_path, "--version"], capture_output=True, text=True, timeout=5)
-            click.echo(f"OK ({ver.stdout.strip()})")
+            version = ver.stdout.strip()
         except Exception:
             click.echo(f"OK (at {opencode_path})")
+        if version:
+            try:
+                major = int(version.lower().split("v")[-1].split(".")[0])
+            except ValueError:
+                major = 2  # unparseable — assume current
+            if major >= 2:
+                click.echo(f"OK ({version})")
+            else:
+                click.echo(f"FAIL ({version} — ASR requires opencode >= 2: --dir and --dangerously-skip-permissions were removed)")
+                ok = False
     else:
         click.echo("MISSING (npm install -g opencode-ai)")
         ok = False
@@ -278,8 +332,11 @@ def doctor(project):
     else:
         click.echo("MISSING (asr init --project . to generate)")
 
-    # 5. opencode config
-    oc_config = project_dir / ".opencode" / "config.json"
+    # 5. opencode config (opencode 2.x: per-repo `opencode.json`; legacy
+    #    `.opencode/config.json` still honoured as fallback)
+    oc_config = project_dir / "opencode.json"
+    if not oc_config.exists():
+        oc_config = project_dir / ".opencode" / "config.json"
     if not oc_config.exists():
         oc_config = Path.home() / ".config" / "opencode" / "opencode.json"
     click.echo(f"opencode config: ", nl=False)

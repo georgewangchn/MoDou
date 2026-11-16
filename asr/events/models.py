@@ -47,6 +47,12 @@ class Event(BaseModel):
     to_agent: AgentName
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     sequence: int = 1
+    # P0-1: Typed event edges — causal graph for observability and traceability
+    caused_by: str | None = None        # event_id of the upstream event that triggered this one
+    supersedes: str | None = None       # event_id of a prior event this one replaces (temporal supersession)
+    decided_by: str | None = None       # event_id of the event that was the basis for a decision
+    validity_from: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    validity_until: datetime | None = None  # None = still valid; set when superseded
 
 
 class TaskCreatedEvent(Event):
@@ -226,3 +232,41 @@ def event_from_dict(data: dict[str, Any]) -> Event:
     event_type = EventType(data["type"])
     event_cls = _EVENT_TYPE_MAP.get(event_type, Event)
     return event_cls(**data)
+
+
+# P1-2: Standardized handoff context for inter-agent communication
+class HandoffContext(BaseModel):
+    """Structured context passed between agents to reduce information loss.
+
+    Each agent fills in its section before passing control to the next agent.
+    The controller aggregates and injects this into the next agent's prompt.
+    """
+    # Builder section
+    changes_made: str = ""                # What the Builder changed this round
+    affected_files: list[str] = []        # Files modified/created
+    affected_modules: list[str] = []      # Modules touched
+    builder_notes: str = ""               # Builder's own notes on what it did
+
+    # Tester section
+    test_total: int = 0
+    test_passed: int = 0
+    test_failed: int = 0
+    test_errors: int = 0
+    failure_summary: list[str] = []       # Short summaries of each failure
+    new_failures: list[str] = []          # Failures not seen in previous round
+    resolved_failures: list[str] = []     # Failures from previous round now fixed
+
+    # Analyzer section
+    spec_aligned: bool = False
+    missing_features: list[str] = []
+    logic_issues: list[str] = []
+    high_severity_count: int = 0
+    analyzer_recommendation: str = ""
+
+    # Controller section
+    iteration: int = 0
+    repair_mode: str = ""
+    trend: str = ""
+    pass_rate: float = 0.0
+    unresolved_issues: list[str] = []     # Issues carried forward to next round
+    suggested_next: str = ""              # Controller's suggested next action

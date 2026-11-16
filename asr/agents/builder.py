@@ -14,11 +14,44 @@ from asr.events.store import EventStore
 
 
 class BuilderAgent(BaseAgent):
-    def __init__(self, config: AgentConfig, event_store: EventStore, project_dir: Path):
+    # P1-1: Zone-specialized prompts and file pattern constraints
+    ZONE_PROMPTS = {
+        "core": (
+            "你是核心逻辑 Builder。专注于实现业务逻辑、数据模型、API 接口。"
+            "不要修改测试文件或文档文件。只修改 src/ 和核心业务代码。"
+        ),
+        "test": (
+            "你是测试 Builder。专注于编写和修复测试用例。"
+            "只修改 tests/ 目录下的文件。不要修改生产代码。"
+        ),
+        "doc": (
+            "你是文档 Builder。专注于编写和更新文档。"
+            "只修改 README.md, DESIGN.md, docs/ 目录下的文件。"
+        ),
+        "config": (
+            "你是配置 Builder。专注于配置文件、依赖管理、构建脚本。"
+            "只修改 *.toml, *.cfg, *.ini, requirements.txt, Makefile, Dockerfile 等。"
+        ),
+        "general": "",  # No zone specialization — behave as before
+    }
+    ZONE_FILE_PATTERNS = {
+        "core": ["src/**/*.py", "*.py"],
+        "test": ["tests/**/*.py", "test_*.py"],
+        "doc": ["*.md", "docs/**/*"],
+        "config": ["*.toml", "*.cfg", "*.ini", "requirements*.txt", "Makefile", "Dockerfile"],
+        "general": ["*"],
+    }
+
+    def __init__(self, config: AgentConfig, event_store: EventStore, project_dir: Path,
+                 zone: str = "general"):
         super().__init__(name=AgentName.BUILDER, event_store=event_store)
         self._config = config
         self._project_dir = project_dir
         self._opencode_session_id: str | None = None
+        # P1-1: Zone specialization
+        self._zone = zone if zone in self.ZONE_PROMPTS else "general"
+        self._zone_prompt = self.ZONE_PROMPTS[self._zone]
+        self._allowed_patterns = self.ZONE_FILE_PATTERNS[self._zone]
 
     async def process(self, event: Event) -> list[Event]:
         if not self.validate_event(event):
@@ -90,6 +123,9 @@ class BuilderAgent(BaseAgent):
 
     def _build_patch_prompt(self, failures: list[dict], feedback: list[str]) -> str:
         base = "你收到了测试专家和验收专家的反馈，请根据以下信息改进代码：\n"
+        # P1-1: Inject zone-specific instructions
+        if self._zone_prompt:
+            base = f"[ZONE:{self._zone}] {self._zone_prompt}\n\n{base}"
         if failures:
             failure_text = "\n".join(
                 f"- {f.get('nodeid', 'unknown')}: {f.get('message', 'no message')}"

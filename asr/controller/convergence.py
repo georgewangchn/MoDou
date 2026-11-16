@@ -30,12 +30,14 @@ from asr.events.models import (
     ConvergenceIterationEvent,
     ConvergenceMetricsEvent,
     ConvergenceMetrics,
+    HandoffContext,
 )
 from asr.events.store import EventStore
 from asr.spec.models import Specification
 from asr.agents.base import BaseAgent
 from asr.patch.diff import PatchEntry
 from asr.logger import ASRLogger
+from asr.memory.domain import DomainMemory
 
 
 class ConvergenceState(str, Enum):
@@ -101,9 +103,24 @@ class ASRController:
         # ── #3 fix: notify Builder after patch rejection ──
         self._last_patch_rejection: tuple[int, str] | None = None  # (iteration, reason) from last rejected patch
         self._mode_history: list[tuple[str, int]] = []  # P0-2: track mode transitions for feedforward
+        # P0-1: Track last event IDs per phase for causal linking
+        self._last_test_event_id: str | None = None
+        self._last_analysis_event_id: str | None = None
+        self._last_repair_event_id: str | None = None
+        self._last_patch_request_id: str | None = None
+        # P1-2: Handoff context for inter-agent communication
+        self._handoff_context: HandoffContext | None = None
+        # P2-1: Persistent domain memory for cross-task knowledge accumulation
+        self._domain_memory: DomainMemory | None = None
+        self._init_domain_memory()
+
+    def _init_domain_memory(self) -> None:
+        """P2-1: Initialize domain memory for persistent cross-task knowledge."""
+        memory_dir = self._project_dir / self._config.runtime.state_dir / "memory"
+        self._domain_memory = DomainMemory(zone="general", memory_dir=memory_dir)
 
     def _finalize_metrics_timeline(self, task_id: str, result: ConvergenceResult) -> None:
-        """P2-2: Export metrics history as structured time-series data."""
+        """P2-2: Export metrics history as structured time-series data + HTML dashboard."""
         timeline = []
         for i, m in enumerate(self._metrics_history):
             mode_at = self._mode_history[i][0] if i < len(self._mode_history) else self._repair_mode
@@ -121,10 +138,12 @@ class ASRController:
                 "patch_count": m.patch_count,
                 "changed_file_count": m.changed_file_count,
                 "rollback_count": m.rollback_count,
+                "repeated_failure_count": m.repeated_failure_count,
             })
         result.metrics_timeline = timeline
         result.summary["metrics_timeline"] = timeline
-        # Write to file for post-hoc analysis
+
+        # Write JSON for post-hoc analysis
         import json
         state_dir = self._project_dir / self._config.runtime.state_dir
         state_dir.mkdir(parents=True, exist_ok=True)
@@ -132,6 +151,202 @@ class ASRController:
         with open(metrics_path, 'w') as f:
             json.dump(timeline, f, indent=2, ensure_ascii=False)
         self._logger.log("INFO", f"P2-2: metrics timeline saved to {metrics_path}", "controller")
+
+        # P2-2: Build and save HTML observability dashboard
+        dashboard_html = self._build_observability_dashboard(task_id, timeline, result)
+        dashboard_path = state_dir / f"dashboard_{task_id}.html"
+        with open(dashboard_path, 'w') as f:
+            f.write(dashboard_html)
+        self._logger.log("INFO", f"P2-2: observability dashboard saved to {dashboard_path}", "controller")
+
+    def _build_observability_dashboard(self, task_id: str, timeline: list[dict],
+                                        result: ConvergenceResult) -> str:
+        """P2-2: Generate a self-contained HTML observability dashboard."""
+        import json as _json
+
+        # Build event causality summary from result events
+        event_summary: list[dict] = []
+        for evt in result.events:
+            entry = {
+                "type": evt.type.value,
+                "from": evt.from_agent.value,
+                "to": evt.to_agent.value,
+                "has_cause": evt.caused_by is not None,
+                "has_supersede": evt.supersedes is not None,
+            }
+            event_summary.append(entry)
+
+        # Build mode transition summary
+        mode_transitions: list[dict] = []
+        for mode, it in self._mode_history:
+            mode_transitions.append({"iteration": it, "mode": mode})
+
+        # Build patch lineage summary
+        lineage = self._patch_lineage if self._patch_lineage else []
+
+        # Build failure fingerprint history
+        fingerprint_history = [
+            {"iteration": i + 1, "fingerprint": fp}
+            for i, fp in enumerate(self._failure_fingerprints)
+        ]
+
+        timeline_json = _json.dumps(timeline, ensure_ascii=False)
+        events_json = _json.dumps(event_summary, ensure_ascii=False)
+        modes_json = _json.dumps(mode_transitions, ensure_ascii=False)
+        lineage_json = _json.dumps(lineage, ensure_ascii=False)
+        fingerprints_json = _json.dumps(fingerprint_history, ensure_ascii=False)
+        final_state = result.state.value
+        total_iterations = result.iterations
+        total_events = len(result.events)
+        causal_events = sum(1 for e in result.events if e.caused_by is not None)
+        superseded_events = sum(1 for e in result.events if e.supersedes is not None)
+        # Guard against empty timeline
+        if timeline:
+            final_pass_rate = f"{timeline[-1]['test_pass_rate']*100:.1f}%"
+            max_oscillation = f"{max(t['oscillation_score'] for t in timeline):.2f}"
+        else:
+            final_pass_rate = "N/A"
+            max_oscillation = "0.00"
+
+        return f"""<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ASR Observability Dashboard — {task_id}</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: -apple-system, system-ui, sans-serif; background: #f6f8fa; color: #24292f; padding: 20px; }}
+  h1 {{ font-size: 20px; margin-bottom: 4px; }}
+  h2 {{ font-size: 16px; margin: 20px 0 8px; color: #57606a; }}
+  .subtitle {{ font-size: 13px; color: #8b949e; margin-bottom: 16px; }}
+  .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-bottom: 20px; }}
+  .card {{ background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; }}
+  .card h3 {{ font-size: 12px; color: #57606a; text-transform: uppercase; margin-bottom: 8px; }}
+  .card .value {{ font-size: 28px; font-weight: 600; }}
+  .card .detail {{ font-size: 12px; color: #8b949e; margin-top: 4px; }}
+  .state-converged {{ color: #1a7f37; }}
+  .state-stuck {{ color: #cf222e; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
+  th {{ background: #f6f8fa; text-align: left; padding: 6px 8px; border-bottom: 1px solid #d0d7de; color: #57606a; }}
+  td {{ padding: 6px 8px; border-bottom: 1px solid #eaeef2; }}
+  .trend-improving {{ color: #1a7f37; font-weight: 500; }}
+  .trend-regressing {{ color: #cf222e; font-weight: 500; }}
+  .trend-stalled {{ color: #d4a72c; }}
+  .trend-oscillating {{ color: #cf222e; font-weight: 500; }}
+  .mode-badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }}
+  .mode-INITIAL {{ background: #ddf4ff; color: #0969da; }}
+  .mode-TEST_FIX {{ background: #dafbe1; color: #1a7f37; }}
+  .mode-SPEC_COMPLETION {{ background: #fff8c5; color: #9a6700; }}
+  .mode-OSCILLATION_BREAK {{ background: #ffd8b5; color: #bc4c00; }}
+  .mode-REGRESSION_RECOVERY {{ background: #ffd0e0; color: #cf222e; }}
+  .mode-FINAL_VERIFICATION {{ background: #ddf4ff; color: #0969da; }}
+  .chart-container {{ background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 16px; margin-bottom: 16px; }}
+  .bar {{ height: 20px; border-radius: 3px; transition: width 0.3s; }}
+  .bar-pass {{ background: #4ac26b; }}
+  .bar-fail {{ background: #e24b4a; }}
+  .bar-container {{ display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }}
+  .bar-label {{ font-size: 11px; color: #57606a; width: 60px; text-align: right; }}
+  .bar-track {{ flex: 1; background: #eaeef2; border-radius: 3px; overflow: hidden; height: 16px; display: flex; }}
+</style>
+</head>
+<body>
+<h1>ASR Observability Dashboard</h1>
+<p class="subtitle">Task: {task_id} | State: <span class="state-{final_state}">{final_state}</span> | Iterations: {total_iterations} | Events: {total_events} | Causal links: {causal_events} | Superseded: {superseded_events}</p>
+
+<div class="grid">
+  <div class="card"><h3>Final State</h3><div class="value state-{final_state}">{final_state}</div></div>
+  <div class="card"><h3>Total Iterations</h3><div class="value">{total_iterations}</div></div>
+  <div class="card"><h3>Final Pass Rate</h3><div class="value">{final_pass_rate}</div></div>
+  <div class="card"><h3>Mode Transitions</h3><div class="value">{len(mode_transitions)}</div></div>
+  <div class="card"><h3>Patches Applied</h3><div class="value">{sum(t["patch_count"] for t in timeline)}</div></div>
+  <div class="card"><h3>Rollbacks</h3><div class="value">{sum(t["rollback_count"] for t in timeline)}</div></div>
+  <div class="card"><h3>Causal Events</h3><div class="value">{causal_events}</div><div class="detail">of {total_events} total</div></div>
+  <div class="card"><h3>Oscillation Detected</h3><div class="value">{max_oscillation}</div><div class="detail">max score</div></div>
+</div>
+
+<h2>Convergence Timeline</h2>
+<div class="chart-container">
+  <table>
+    <thead><tr><th>Iter</th><th>Pass Rate</th><th>Trend</th><th>Mode</th><th>Failed</th><th>Errors</th><th>Missing</th><th>Patches</th><th>Rollbacks</th><th>Oscillation</th><th>Sensor</th></tr></thead>
+    <tbody>
+      {''.join(f'''<tr>
+        <td>{t["iteration"]}</td>
+        <td>{t["test_pass_rate"]*100:.1f}%</td>
+        <td class="trend-{t["trend"]}">{t["trend"]}</td>
+        <td><span class="mode-badge mode-{t["repair_mode"]}">{t["repair_mode"]}</span></td>
+        <td>{t["test_failed_count"]}</td>
+        <td>{t["test_error_count"]}</td>
+        <td>{t["missing_feature_count"]}</td>
+        <td>{t["patch_count"]}</td>
+        <td>{t["rollback_count"]}</td>
+        <td>{t["oscillation_score"]:.2f}</td>
+        <td>{t["sensor_disagreement"]}</td>
+      </tr>''' for t in timeline)}
+    </tbody>
+  </table>
+</div>
+
+<h2>Pass Rate Trajectory</h2>
+<div class="chart-container">
+  {''.join(f'''<div class="bar-container">
+    <div class="bar-label">Iter {t["iteration"]}</div>
+    <div class="bar-track">
+      <div class="bar bar-pass" style="width: {t["test_pass_rate"]*100}%"></div>
+      <div class="bar bar-fail" style="width: {(1-t["test_pass_rate"])*100}%"></div>
+    </div>
+    <div class="bar-label">{t["test_pass_rate"]*100:.0f}%</div>
+  </div>''' for t in timeline)}
+</div>
+
+<h2>Mode Transition History</h2>
+<div class="chart-container">
+  <table>
+    <thead><tr><th>Iteration</th><th>Mode</th></tr></thead>
+    <tbody>
+      {''.join(f'<tr><td>{m["iteration"]}</td><td><span class="mode-badge mode-{m["mode"]}">{m["mode"]}</span></td></tr>' for m in mode_transitions) or '<tr><td colspan="2">No mode transitions</td></tr>'}
+    </tbody>
+  </table>
+</div>
+
+<h2>Failure Fingerprint History</h2>
+<div class="chart-container">
+  <table>
+    <thead><tr><th>Iteration</th><th>Fingerprint</th></tr></thead>
+    <tbody>
+      {''.join(f'<tr><td>{fp["iteration"]}</td><td><code>{fp["fingerprint"]}</code></td></tr>' for fp in fingerprint_history) or '<tr><td colspan="2">No failures recorded</td></tr>'}
+    </tbody>
+  </table>
+</div>
+
+<h2>Event Causality Summary</h2>
+<div class="chart-container">
+  <table>
+    <thead><tr><th>Event Type</th><th>Count</th><th>Has Cause</th><th>Has Supersede</th></tr></thead>
+    <tbody id="event-summary">
+    </tbody>
+  </table>
+</div>
+
+<script>
+  const events = {events_json};
+  const typeCounts = {{}};
+  const typeCausal = {{}};
+  const typeSupersede = {{}};
+  events.forEach(e => {{
+    typeCounts[e.type] = (typeCounts[e.type] || 0) + 1;
+    if (e.has_cause) typeCausal[e.type] = (typeCausal[e.type] || 0) + 1;
+    if (e.has_supersede) typeSupersede[e.type] = (typeSupersede[e.type] || 0) + 1;
+  }});
+  const tbody = document.getElementById('event-summary');
+  Object.keys(typeCounts).sort().forEach(type => {{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td><code>${{type}}</code></td><td>${{typeCounts[type]}}</td><td>${{typeCausal[type] || 0}}</td><td>${{typeSupersede[type] || 0}}</td>`;
+    tbody.appendChild(tr);
+  }});
+</script>
+</body>
+</html>"""
 
     async def run(self, spec: Specification, task_id: str | None = None,
                   progress_callback=None) -> ConvergenceResult:
@@ -298,6 +513,15 @@ class ASRController:
             )
             self._emit_metrics(task_id, metrics, result)
 
+            # P0-1: Track last event IDs for causal linking in next iteration
+            if analysis_events:
+                self._last_analysis_event_id = analysis_events[-1].event_id
+            if repair_events:
+                for evt in reversed(repair_events):
+                    if evt.type in (EventType.PATCH_APPLIED, EventType.PATCH_FAILED):
+                        self._last_repair_event_id = evt.event_id
+                        break
+
             # Step 3: circuit breaker — stop if no meaningful progress
             cfg = self._config.convergence
             # Circuit breaker: stop if pass_rate is flat or decreasing.
@@ -454,6 +678,28 @@ class ASRController:
                          "phase": "REPAIRING", "detail": "continuing"},
             ), result)
 
+            # P1-2: Build handoff context for next iteration's agents
+            self._handoff_context = self._build_handoff_context(
+                iteration, test_events, analysis_events, repair_events,
+                metrics, prev_failures, prev_feedback,
+            )
+
+            # P2-1: Update domain memory with this iteration's results
+            if self._domain_memory:
+                patch_applied = any(
+                    e.type == EventType.PATCH_APPLIED and e.payload.get("success")
+                    for e in repair_events
+                )
+                self._domain_memory.update(
+                    iteration=iteration,
+                    metrics=metrics.model_dump(),
+                    repair_mode=self._repair_mode,
+                    trend=metrics.trend,
+                    failures=this_iter_failures,
+                    feedback=prev_feedback,
+                    patch_applied=patch_applied,
+                )
+
         self._emit_stuck(task_id, iteration, "max_iterations", [], result)
         self._finalize_metrics_timeline(task_id, result)
         return result
@@ -486,6 +732,7 @@ class ASRController:
             task_id=task_id, from_agent=AgentName.CONTROLLER, to_agent=AgentName.TESTER,
             payload={"test_paths": [str(self._project_dir)], "changed_files": changed_files},
         )
+        self._last_test_event_id = test_started.event_id
         if self._tester:
             result_events = await self._invoke_agent(self._tester, test_started, task_id, "testing")
             if result_events:
@@ -533,6 +780,7 @@ class ASRController:
             task_id=task_id, from_agent=AgentName.CONTROLLER, to_agent=AgentName.ANALYZER,
             payload={"project_path": str(self._project_dir), "test_summary": test_summary,
                      "diff": analysis_diff},
+            caused_by=self._last_test_event_id,
         )
         # Force analyzer to run every 3 builder invocations (periodic code review)
         # or when there are test failures
@@ -578,6 +826,39 @@ class ASRController:
             return max(3, base_files // 2), max(50, base_lines // 2)
         return base_files, base_lines
 
+    def _route_to_zone(self, feedback: list[str], failures: list[dict],
+                       analysis_events: list[Event]) -> str:
+        """P1-1: Route to the appropriate Builder zone based on feedback type.
+
+        Control theory: reduces cognitive load on the executor by constraining
+        its scope — each zone has a focused system prompt and file pattern.
+        """
+        feedback_text = " ".join(feedback).lower()
+        failure_text = " ".join(f.get("nodeid", "") for f in failures).lower()
+
+        # Route to "test" zone: test failures with no missing features
+        if ("test_" in failure_text or "test_" in feedback_text) and \
+           "[missing]" not in feedback_text and "[spec_completion]" not in feedback_text:
+            return "test"
+
+        # Route to "doc" zone: only documentation issues
+        if "[doc" in feedback_text or "documentation" in feedback_text or "readme" in feedback_text:
+            if not failures:
+                return "doc"
+
+        # Route to "config" zone: configuration/dependency issues
+        if "[config" in feedback_text or "requirements.txt" in feedback_text or \
+           "pyproject" in feedback_text or "import error" in feedback_text:
+            return "config"
+
+        # Route to "core" zone: missing features, logic issues
+        if "[missing]" in feedback_text or "[logic" in feedback_text or \
+           "[spec_completion]" in feedback_text:
+            return "core"
+
+        # Default: general (no specialization)
+        return "general"
+
     def _build_builder_context(self) -> str:
         """P0-2: Build feedforward context for Builder — system state Builder can't see.
 
@@ -622,7 +903,111 @@ class ASRController:
                 streaks.append(f"regressing×{self._regressing_streak}")
             if streaks:
                 parts.append(f"[TREND] {trend} ({', '.join(streaks)})")
+        # 6. P2-1: Persistent domain memory — cross-task knowledge
+        if self._domain_memory:
+            memory_text = self._domain_memory.load()
+            if memory_text:
+                # Extract only the most recent 5 entries to keep context bounded
+                lines = memory_text.split("\n")
+                entry_lines = [l for l in lines if l.strip().startswith("- [")]
+                if entry_lines:
+                    recent = entry_lines[-5:]
+                    parts.append(f"[DOMAIN_MEMORY] 项目记忆（最近{len(recent)}条）:\n" + "\n".join(recent))
         return "\n".join(parts) if parts else ""
+
+    def _build_handoff_context(
+        self, iteration: int, test_events: list[Event],
+        analysis_events: list[Event], repair_events: list[Event],
+        metrics: ConvergenceMetrics,
+        prev_failures: list[dict], prev_feedback: list[str],
+    ) -> HandoffContext:
+        """P1-2: Build standardized handoff context for inter-agent communication.
+
+        Reduces information loss by structuring what each agent learned,
+        so the next agent receives a complete picture instead of ad-hoc dicts.
+        """
+        ctx = HandoffContext(iteration=iteration)
+
+        # Builder section — what changed this round
+        for evt in repair_events:
+            if evt.type == EventType.PATCH_APPLIED and evt.payload.get("success"):
+                ctx.changes_made = f"Patch applied successfully (iter {iteration})"
+            elif evt.type == EventType.PATCH_FAILED:
+                ctx.changes_made = f"Patch failed: {evt.payload.get('error', '')[:200]}"
+        # Extract affected files from rollback entries
+        ctx.affected_files = list(set(
+            e.file_path for e in self._prev_rollback_entries
+            if hasattr(e, 'file_path')
+        ))
+
+        # Tester section
+        for evt in test_events:
+            if hasattr(evt, 'payload'):
+                ctx.test_total = max(ctx.test_total, evt.payload.get("total", 0))
+                ctx.test_passed = max(ctx.test_passed, evt.payload.get("passed", 0))
+                if evt.type == EventType.TEST_FAILED:
+                    ctx.test_failed = evt.payload.get("failed", 0)
+                    for f in evt.payload.get("failures", [])[:5]:
+                        nodeid = f.get("nodeid", "?")
+                        msg = f.get("message", "")[:100]
+                        ctx.failure_summary.append(f"{nodeid}: {msg}")
+                elif evt.type == EventType.TEST_ERROR:
+                    ctx.test_errors += 1
+                    ctx.failure_summary.append(
+                        f"[ERROR] {evt.payload.get('error_message', '')[:100]}"
+                    )
+        ctx.pass_rate = metrics.test_pass_rate
+
+        # Compute new vs resolved failures (compare with previous round)
+        current_fp = self._failure_fingerprints[-1] if self._failure_fingerprints else "none"
+        if len(self._failure_fingerprints) >= 2:
+            prev_fp = self._failure_fingerprints[-2]
+            if prev_fp != "none" and current_fp != "none" and prev_fp != current_fp:
+                ctx.resolved_failures.append("Failure pattern changed from previous round")
+
+        # Analyzer section
+        for evt in analysis_events:
+            if evt.type == EventType.SPEC_ALIGNED:
+                ctx.spec_aligned = True
+            elif evt.type == EventType.SPEC_DIFF_FOUND:
+                ctx.missing_features = evt.payload.get("missing_features", [])[:5]
+                ctx.logic_issues = evt.payload.get("logic_issues", [])[:5]
+            elif evt.type == EventType.ANALYZER_FEEDBACK:
+                ctx.high_severity_count = evt.payload.get("high_severity_count", 0)
+                ctx.analyzer_recommendation = evt.payload.get("recommendation", "")[:200]
+
+        # Controller section
+        ctx.repair_mode = self._repair_mode
+        ctx.trend = metrics.trend
+        ctx.unresolved_issues = [fb[:100] for fb in prev_feedback[:5] if fb]
+        if metrics.test_failed_count > 0:
+            ctx.suggested_next = f"Fix {metrics.test_failed_count} test failures"
+        elif metrics.missing_feature_count > 0:
+            ctx.suggested_next = f"Implement {metrics.missing_feature_count} missing features"
+        elif metrics.trend == "improving":
+            ctx.suggested_next = "Continue current approach — trend is improving"
+        else:
+            ctx.suggested_next = "Review and adjust strategy"
+
+        return ctx
+
+    def _format_handoff_for_builder(self, ctx: HandoffContext) -> str:
+        """P1-2: Format handoff context as a concise string for Builder prompt."""
+        parts: list[str] = []
+        parts.append(f"[HANDOFF] iter={ctx.iteration} mode={ctx.repair_mode} "
+                      f"pass_rate={ctx.pass_rate:.1%} trend={ctx.trend}")
+        if ctx.test_failed > 0:
+            parts.append(f"  tests: {ctx.test_passed}/{ctx.test_total} passed, "
+                         f"{ctx.test_failed} failed, {ctx.test_errors} errors")
+        if ctx.failure_summary:
+            parts.append(f"  failures: {'; '.join(ctx.failure_summary[:3])}")
+        if ctx.missing_features:
+            parts.append(f"  missing: {', '.join(ctx.missing_features[:3])}")
+        if ctx.high_severity_count > 0:
+            parts.append(f"  high_severity: {ctx.high_severity_count}")
+        if ctx.suggested_next:
+            parts.append(f"  suggested: {ctx.suggested_next}")
+        return "\n".join(parts) if len(parts) > 1 else ""
 
     async def _repairing_phase(
         self, task_id: str, failures: list[dict], feedback: list[str]
@@ -733,6 +1118,27 @@ class ASRController:
             if builder_context:
                 mode_feedback.insert(0, builder_context)
 
+            # P1-1: Zone routing — if zone specialization is enabled, determine
+            # the appropriate zone and inject zone-specific instructions
+            zone_enabled = getattr(self._config.convergence, 'zone_specialized_builder', False)
+            if zone_enabled and self._builder and hasattr(self._builder, '_zone'):
+                # Need analysis events to route — use the feedback content as proxy
+                target_zone = self._route_to_zone(mode_feedback, mode_failures, [])
+                if target_zone != "general":
+                    # Update builder's zone dynamically
+                    from asr.agents.builder import BuilderAgent
+                    if isinstance(self._builder, BuilderAgent):
+                        self._builder._zone = target_zone
+                        self._builder._zone_prompt = BuilderAgent.ZONE_PROMPTS.get(target_zone, "")
+                        self._builder._allowed_patterns = BuilderAgent.ZONE_FILE_PATTERNS.get(target_zone, ["*"])
+                    mode_feedback.insert(0, f"[ZONE_ROUTE] Routed to {target_zone} builder zone")
+
+            # P1-2: Inject handoff context so Builder sees structured state from all agents
+            if self._handoff_context:
+                handoff_str = self._format_handoff_for_builder(self._handoff_context)
+                if handoff_str:
+                    mode_feedback.insert(0, handoff_str)
+
             if self._repair_mode == "COMPILE_FIX":
                 # Only pass compile errors (TEST_ERROR), filter out test failures
                 mode_failures = [f for f in failures if f.get("nodeid") == "compile_error"]
@@ -778,7 +1184,10 @@ class ASRController:
             patch_request = PatchRequestedEvent(
                 task_id=task_id, from_agent=AgentName.CONTROLLER, to_agent=AgentName.BUILDER,
                 payload=patch_payload,
+                caused_by=self._last_analysis_event_id,
+                decided_by=self._last_test_event_id,
             )
+            self._last_patch_request_id = patch_request.event_id
             result_events = await self._invoke_agent(self._builder, patch_request, task_id, "repairing")
             for evt in result_events:
                 events.append(evt)

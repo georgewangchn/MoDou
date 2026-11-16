@@ -59,7 +59,7 @@ def create_default_config() -> ASRConfig:
     NOTE: ASR delegates all LLM calls to the `opencode` CLI.
     The model/api_base/api_key fields below are for reference only —
     the actual LLM provider is configured in opencode's config file
-    (.opencode/config.json in the project root, or
+    (opencode.json in the project root, or
     ~/.config/opencode/opencode.json globally).
 
     Run `asr init --project .` to generate an opencode config template.
