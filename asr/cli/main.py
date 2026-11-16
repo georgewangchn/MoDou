@@ -10,7 +10,7 @@ from asr.runtime import ASRRuntime
 from asr.agents.llm_tracker import get_agent_tokens
 
 # Exit codes for non-interactive callers (e.g. ousheng cruise mode driving
-# ASR as a subprocess). Keep stable: callers branch on them.
+# MoDou as a subprocess). Keep stable: callers branch on them.
 EXIT_CONVERGED = 0      # all acceptance criteria met, tests green
 EXIT_NOT_CONVERGED = 1  # ran to max iterations / stuck, environment healthy
 EXIT_ENV_ERROR = 2      # opencode CLI missing, bad spec/config, backend crash
@@ -29,7 +29,7 @@ def cli():
 @click.option("--decoupled", is_flag=True, help="Use decoupled A2A mode (AgentRunner)")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
 def run(project, spec, config_path, max_iterations, decoupled, verbose):
-    """Run ASR convergence loop (non-interactive; safe to drive as a subprocess).
+    """Run MoDou convergence loop (software engineering plugin; subprocess-safe).
 
     Minimal spec YAML (auto-projectable from a work-item description):
 
@@ -67,7 +67,7 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
     runtime = ASRRuntime(config)
 
     mode = "解耦A2A" if decoupled else "直接模式"
-    click.echo(f"ASR 收敛运行时 [{mode}]")
+    click.echo(f"MoDou 软件工程收敛插件 [{mode}]")
     click.echo(f"项目路径: {project_dir}")
     click.echo(f"规格文件: {spec_path or '(来自 DESIGN.md)'}")
     click.echo(f"最大迭代轮次: {config.convergence.max_iterations}")
@@ -102,7 +102,7 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
     except SystemExit:
         raise
     except Exception as exc:
-        click.echo(f"ERROR: ASR runtime crashed: {exc}")
+        click.echo(f"ERROR: MoDou runtime crashed: {exc}")
         raise SystemExit(EXIT_ENV_ERROR)
 
     click.echo()
@@ -133,6 +133,48 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
     raise SystemExit(exit_code)
 
 
+@cli.command()
+@click.option("--project", required=True, type=click.Path(exists=True), help="Project directory under assessment")
+@click.option("--spec", default=None, type=click.Path(exists=True), help="Spec YAML file (optional; reads DESIGN.md if omitted)")
+@click.option("--no-analyzer", is_flag=True, help="Skip semantic analysis; deterministic verification only")
+@click.option("--json-output", default=None, type=click.Path(), help="Write structured Assessment to a JSON file")
+@click.option("--timeout", default=600, type=int, help="pytest timeout in seconds")
+@click.option("--basetemp", default=None, type=click.Path(), help="pytest basetemp (use a workspace path under sandboxes)")
+def assess(project, spec, no_analyzer, json_output, timeout, basetemp):
+    """独立评估：Tester 验证 + Analyzer 偏差分析。不调用 Builder，不修改交付物。
+
+    Exit codes: 0=PASS, 1=DEVIATION/INCONCLUSIVE, 2=BLOCKED/environment error.
+    """
+    import json as _json
+
+    from asr.assurance import STATUS_BLOCKED, STATUS_PASS, assess as run_assessment
+
+    project_dir = Path(project).resolve()
+    spec_path = Path(spec).resolve() if spec else None
+    basetemp_path = Path(basetemp).resolve() if basetemp else None
+
+    result = asyncio.run(run_assessment(
+        project_dir,
+        spec_path,
+        use_analyzer=not no_analyzer,
+        timeout=timeout,
+        basetemp=basetemp_path,
+    ))
+
+    click.echo(result.to_text())
+    if json_output:
+        out = Path(json_output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+        click.echo(f"\n📄 Assessment JSON: {out}")
+
+    if result.status == STATUS_PASS:
+        raise SystemExit(EXIT_CONVERGED)
+    if result.status == STATUS_BLOCKED:
+        raise SystemExit(EXIT_ENV_ERROR)
+    raise SystemExit(EXIT_NOT_CONVERGED)
+
+
 @cli.command(name="run-dag")
 @click.option("--project", required=True, type=click.Path(exists=True), help="Project directory")
 @click.option("--spec", required=True, type=click.Path(exists=True), help="Spec YAML file")
@@ -143,7 +185,7 @@ def run_dag(project, spec, config_path, verbose):
     project_dir = Path(project).resolve()
     runtime = ASRRuntime(config)
 
-    click.echo(f"ASR Runtime [DAG Mode]")
+    click.echo(f"MoDou Runtime [DAG Mode]")
     click.echo(f"Project: {project_dir}")
     click.echo()
 
@@ -187,7 +229,7 @@ def init(project):
     if not opencode_config.exists():
         opencode_config.write_text(_EXAMPLE_OPENCODE_CONFIG)
 
-    click.echo(f"Initialized ASR project at {project_dir}")
+    click.echo(f"Initialized MoDou project at {project_dir}")
     click.echo(f"  Config:       {config_path}")
     click.echo(f"  Design doc:   {design_path} (edit this to define your project)")
     click.echo(f"  Runtime:      {runtime_dir}")
@@ -271,14 +313,14 @@ _EXAMPLE_OPENCODE_CONFIG = """\
 @cli.command()
 @click.option("--project", required=True, type=click.Path(exists=True), help="Project directory to diagnose")
 def doctor(project):
-    """Diagnose ASR environment and configuration."""
+    """Diagnose MoDou environment and configuration."""
     import shutil as _shutil
     import subprocess as _sp
 
     project_dir = Path(project).resolve()
     ok = True
 
-    click.echo("ASR Environment Diagnosis")
+    click.echo("MoDou Environment Diagnosis")
     click.echo("=" * 50)
 
     # 1. Python version
@@ -290,7 +332,7 @@ def doctor(project):
         click.echo("FAIL (need >= 3.11)")
         ok = False
 
-    # 2. opencode CLI (version check: ASR requires opencode >= 2)
+    # 2. opencode CLI (version check: MoDou requires opencode >= 2)
     click.echo("opencode CLI: ", nl=False)
     opencode_path = _shutil.which("opencode")
     if opencode_path:
@@ -308,7 +350,7 @@ def doctor(project):
             if major >= 2:
                 click.echo(f"OK ({version})")
             else:
-                click.echo(f"FAIL ({version} — ASR requires opencode >= 2: --dir and --dangerously-skip-permissions were removed)")
+                click.echo(f"FAIL ({version} — MoDou requires opencode >= 2: --dir and --dangerously-skip-permissions were removed)")
                 ok = False
     else:
         click.echo("MISSING (npm install -g opencode-ai)")
@@ -345,7 +387,7 @@ def doctor(project):
     else:
         click.echo("MISSING (asr init --project . to generate template)")
 
-    # 6. ASR config
+    # 6. asr_config.yaml
     asr_config = project_dir / "asr_config.yaml"
     click.echo(f"asr_config.yaml: ", nl=False)
     if asr_config.exists():
