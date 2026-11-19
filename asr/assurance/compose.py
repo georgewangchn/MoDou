@@ -186,8 +186,9 @@ SCHEMA_VERSION = "modou/assessment@1.0"
 
 
 def new_assessment_id() -> str:
+    import uuid
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return f"ASM-{stamp}"
+    return f"ASM-{stamp}-{uuid.uuid4().hex[:6]}"
 
 
 @dataclass

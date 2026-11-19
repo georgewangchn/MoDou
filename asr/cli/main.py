@@ -431,6 +431,69 @@ def board_writeback(assessment, board, execute, actor, corrections_ledger,
     raise SystemExit(0)
 
 
+@cli.command(name="board-watch")
+@click.option("--board", required=True, type=click.Path(exists=True), help="OuSheng board clone (read-only; watch fetches, never pushes)")
+@click.option("--store-dir", default=None, type=click.Path(), help="Assessment archive (default .modou/assessments)")
+@click.option("--interval", default=3600.0, type=float, help="Seconds between cycles (default 1h)")
+@click.option("--once", is_flag=True, help="Run a single cycle and exit (cron mode)")
+@click.option("--no-fetch", is_flag=True, help="Skip git fetch, assess working HEAD (offline/tests)")
+@click.option("--design", "designs", multiple=True, help="Design topic(s); default all decided")
+@click.option("--sample-rate", default=0.0, type=float, help="T1 sampling rate")
+@click.option("--rules-file", default=None, type=click.Path(exists=True))
+@click.option("--rules-ref", default=None)
+@click.option("--workdir", default=None, type=click.Path())
+def board_watch(board, store_dir, interval, once, no_fetch, designs,
+                sample_rate, rules_file, rules_ref, workdir):
+    """定时影子巡检（P4）：fetch→定 sha→评估→存档→趋势账本，循环。
+
+    无人值守纪律：每周期隔离，任何失败记入周期日志后继续（BLOCKED 是周期
+    结果不是崩溃）。cruise/PM 读 last-run.json 作非阻塞观察信号。
+    """
+    import asyncio as _aio
+
+    from asr.assurance.store import AssessmentStore
+    from asr.assurance.watch import run_cycle, watch_loop
+
+    store = AssessmentStore(Path(store_dir) if store_dir else Path(".modou/assessments"))
+    kwargs = dict(fetch=not no_fetch, designs=list(designs) or None,
+                  sample_rate=sample_rate, rules_file=rules_file,
+                  rules_ref=rules_ref, workdir=workdir)
+    if once:
+        s = _aio.run(run_cycle(1, Path(board).resolve(), store, **kwargs))
+        click.echo(f"cycle {s.cycle} rev={s.rev[:10]} subjects={len(s.statuses)} "
+                   f"new={len(s.new_fingerprints)} recurred={len(s.recurred_fingerprints)} "
+                   f"errors={len(s.errors)}")
+        if s.errors:
+            click.echo("; ".join(s.errors[:3]))
+        raise SystemExit(2 if s.errors else (1 if any(
+            v in ("DEVIATION", "INCONCLUSIVE") for v in s.statuses.values()) else 0))
+    _aio.run(watch_loop(Path(board).resolve(), store, interval, **kwargs))
+
+
+@cli.command(name="board-trend")
+@click.option("--store-dir", default=None, type=click.Path(), help="Assessment archive (default .modou/assessments)")
+@click.option("--json-output", default=None, type=click.Path())
+def board_trend(store_dir, json_output):
+    """趋势汇总：状态分布、偏差代码直方、复发与解决指纹（口径显式）。"""
+    import json as _json
+
+    from asr.assurance.store import AssessmentStore
+    from asr.assurance.watch import compute_trend
+
+    store = AssessmentStore(Path(store_dir) if store_dir else Path(".modou/assessments"))
+    t = compute_trend(store)
+    click.echo(f"Subjects: {t['subjects']}  Runs: {t['runs']}")
+    click.echo(f"Status (latest/subject): {t['status_histogram_latest']}")
+    click.echo(f"Codes (latest/subject):  {t['code_histogram_latest']}")
+    click.echo(f"Recurred: {len(t['recurred_fingerprints'])}  "
+               f"Resolved: {len(t['resolved_fingerprints'])}")
+    if json_output:
+        out = Path(json_output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps(t, ensure_ascii=False, indent=2))
+        click.echo(f"📄 Trend JSON: {out}")
+
+
 @cli.command(name="board-mark")
 @click.option("--assessment", required=True, type=click.Path(exists=True), help="Assessment JSON file")
 @click.option("--finding-index", default=None, type=int, help="Index into findings[] (0-based)")
