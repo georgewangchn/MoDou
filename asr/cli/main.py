@@ -356,6 +356,81 @@ def board_calibrate(suite, workdir, store_dir, ledger, rules_file, rules_ref,
     raise SystemExit(0 if ok else 1)
 
 
+@cli.command(name="board-writeback")
+@click.option("--assessment", required=True, type=click.Path(exists=True), help="Assessment JSON to write back")
+@click.option("--board", required=True, type=click.Path(exists=True), help="OuSheng board clone (writable clone; NEVER the shared production checkout)")
+@click.option("--execute", is_flag=True, help="Actually create items (default: dry-run, print plan only)")
+@click.option("--actor", default="modou", help="Acting identity (must be a registered agent actor)")
+@click.option("--corrections-ledger", default=None, type=click.Path(), help="Corrections ledger (default .modou/corrections.jsonl)")
+@click.option("--quality-ledger", default=None, type=click.Path(), help="PM quality ledger for fp blacklist (default .modou/quality-ledger.jsonl)")
+@click.option("--min-severity", default="medium", type=click.Choice(["critical", "high", "medium", "low"]))
+@click.option("--max-items", default=5, type=int, help="Per-run correction budget")
+def board_writeback(assessment, board, execute, actor, corrections_ledger,
+                    quality_ledger, min_severity, max_items):
+    """纠偏写回（P3）：把过门 findings 计划为纠偏 WorkItem，经官方 MCP 创建。
+
+    默认 dry-run。--execute 才实写；纠偏项一律 backlog（PM 分诊=授权）。
+    幂等：同 fingerprint 的 OPEN 纠偏项不重复创建；PM 标 fp 的指纹永不写回。
+    失败记 PENDING 停止——绝不盲目重试 create。
+
+    Exit codes: 0=all planned/created, 2=any failure or blocked.
+    """
+    import json as _json
+
+    from asr.adapters.ousheng.mcp_client import OuShengMCPClient
+    from asr.adapters.ousheng.snapshot import load_snapshot
+    from asr.assurance.feedback import (
+        CorrectionsLedger, WritebackPolicy, execute_writeback,
+        false_positive_fingerprints, plan_writeback,
+        subject_systems_from_snapshot,
+    )
+
+    data = _json.loads(Path(assessment).read_text())
+    snap = load_snapshot(Path(board))
+    systems = subject_systems_from_snapshot(snap)
+    data.setdefault("scope", {})["subject_systems"] = systems
+
+    policy = WritebackPolicy(min_severity=min_severity, max_items=max_items)
+    cledger = CorrectionsLedger(Path(corrections_ledger) if corrections_ledger
+                                else Path(".modou/corrections.jsonl"))
+    plan = plan_writeback(data, policy,
+                          open_fingerprints=cledger.open_fingerprints(),
+                          fp_fingerprints=false_positive_fingerprints(
+                              Path(quality_ledger) if quality_ledger
+                              else Path(".modou/quality-ledger.jsonl")))
+
+    mode = "EXECUTE" if execute else "DRY-RUN"
+    click.echo(f"Writeback {mode} | assessment={data['assessment_id']} "
+               f"| findings={len(data.get('findings', []))} plan={len(plan)} "
+               f"(min_sev={min_severity}, budget={max_items})")
+    if not plan:
+        click.echo("Nothing eligible (all filtered, deduped or fp-blacklisted).")
+        raise SystemExit(0)
+    for c in plan:
+        click.echo(f"  · [{c.severity}] {c.code} @ {c.subject} ({c.system})")
+        click.echo(f"      {c.title}")
+
+    if not execute:
+        click.echo("Dry-run only. Re-run with --execute after review.")
+        raise SystemExit(0)
+
+    with OuShengMCPClient(str(Path(board).resolve())) as client:
+        results = execute_writeback(plan, client, actor, cledger,
+                                    board=str(snap.project.get("id") or board),
+                                    policy=policy, dry_run=False)
+    failed = [c for c in results if c.state != "CREATED"]
+    for c in results:
+        click.echo(f"  {'✓' if c.state == 'CREATED' else '✗'} {c.new_id or '-'} "
+                   f"{c.code}@{c.subject} → {c.state}")
+    if failed:
+        click.echo(f"{len(failed)} correction(s) failed — recorded PENDING, "
+                   f"investigate before retrying (at-most-once).")
+        raise SystemExit(2)
+    click.echo(f"All {len(results)} correction item(s) created in backlog — "
+               f"PM triage is the authorization step.")
+    raise SystemExit(0)
+
+
 @cli.command(name="board-mark")
 @click.option("--assessment", required=True, type=click.Path(exists=True), help="Assessment JSON file")
 @click.option("--finding-index", default=None, type=int, help="Index into findings[] (0-based)")

@@ -343,7 +343,7 @@ asr/
 | RepairMode、Patch 限幅、Formal Guards、振荡检测、Circuit Breaker、退化回滚、Hysteresis、事件回放 | Implemented | 控制论收敛机制，见技术报告 v2.0 |
 | Assurance Core（Contract Registry / Deviation Engine / Feedback Controller 等） | Planned | 方案文档 §6.2；`asr assess` 提供最小可用子集，非完整 Core |
 | Analyzer / Verifier Plugin SDK、DEP 契约、跨系统集成 | Planned | 方案文档 §6.4–§6.5、§7、§10 阶段 5，本仓库未实现 |
-| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Experimental | P1 影子模式 + P2 校准体系完成并实测通过：快照/分级/案卷/两级协议/四道门/存档/四分类对账；注入校准 **3/3 轮确定性门槛全过**（检出 100%、正常样本误报 0、不确定纪律 0 违例）。写回（P3）未实现；PM precision 门槛待抽检（`.modou/PMMARK.md`，21 条真实 findings） |
+| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Experimental | P1–P3 完成：影子两级分析、四分类对账、注入校准 **CALIBRATED**（检出 100%×3 轮、误报 0、纪律 0、PM precision 90% n=21）、写回闭环（`board-writeback` 默认 dry-run；title-only + `modou-assessment://` 指针证据遵循 T10；fingerprint 幂等 + 半程恢复 + at-most-once）。已在丢弃克隆上实证：3 纠偏项入 backlog、幂等复跑零重复。生产启用需 PM 在真实 board 注册 `modou` actor 并授权 |
 
 Implemented 依据代码与测试标注，不代表已完成生产可用性、覆盖率或性能验证。
 
