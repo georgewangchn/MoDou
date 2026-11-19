@@ -57,7 +57,7 @@ class ASRRuntime:
         return await DAGExecutor(
             config=self._config, event_store=self._event_store,
             project_dir=project_dir, builder=builder, tester=tester,
-            analyzer=analyzer, mesh_agents=[],
+            analyzer=analyzer,
         ).execute(dag, spec)
 
     async def _execute(
@@ -108,7 +108,7 @@ class ASRRuntime:
         dag_result = await DAGExecutor(
             config=self._config, event_store=self._event_store,
             project_dir=project_dir, builder=builder, tester=tester,
-            analyzer=analyzer, mesh_agents=[],
+            analyzer=analyzer,
         ).execute(dag, spec)
         return ConvergenceResult(
             state=ConvergenceState.CONVERGED if dag_result.stuck == 0 else ConvergenceState.STUCK,

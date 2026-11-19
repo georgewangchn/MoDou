@@ -303,7 +303,7 @@ asr/
 │   ├── controller/
 │   │   └── convergence.py            # 收敛控制器（软件工程插件）
 │   ├── cli/
-│   │   └── main.py                   # CLI 入口（init / doctor / assess / run / compare）
+│   │   └── main.py                   # CLI 入口（init / doctor / assess / run）
 │   ├── config/                       # Pydantic v2 配置模型
 │   ├── events/                       # 事件类型 + EventStore
 │   ├── dag/                          # Task DAG 并行执行
@@ -343,6 +343,7 @@ asr/
 | RepairMode、Patch 限幅、Formal Guards、振荡检测、Circuit Breaker、退化回滚、Hysteresis、事件回放 | Implemented | 控制论收敛机制，见技术报告 v2.0 |
 | Assurance Core（Contract Registry / Deviation Engine / Feedback Controller 等） | Planned | 方案文档 §6.2；`asr assess` 提供最小可用子集，非完整 Core |
 | Analyzer / Verifier Plugin SDK、DEP 契约、跨系统集成 | Planned | 方案文档 §6.4–§6.5、§7、§10 阶段 5，本仓库未实现 |
+| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Planned | 见 `docs/MODOU_OuSheng_偏差分析集成方案.md`（Final 1.0 开发基线），P1 开发中 |
 
 Implemented 依据代码与测试标注，不代表已完成生产可用性、覆盖率或性能验证。
 
@@ -382,7 +383,7 @@ Implemented 依据代码与测试标注，不代表已完成生产可用性、�
 | `asr init --project <dir>` | 初始化项目（生成 DESIGN.md 模板 + opencode 配置） |
 | `asr doctor --project <dir>` | 环境预检（opencode / Python / DESIGN.md / config） |
 | `asr run --project <dir> --max-iterations N` | 运行软件工程收敛插件（Builder → Tester → Analyzer） |
-| `asr compare --project <dir> --spec <yaml>` | 对比方案效果 |
+| `asr assess --project <dir> [--spec y.yaml]` | 只读独立评估（四态 + 退出码契约） |
 
 </details>
 

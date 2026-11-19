@@ -20,7 +20,6 @@ class DAGExecutor:
         builder: BaseAgent | None = None,
         tester: BaseAgent | None = None,
         analyzer: BaseAgent | None = None,
-        mesh_agents: list[BaseAgent] | None = None,
     ):
         self._config = config
         self._event_store = event_store
@@ -28,7 +27,6 @@ class DAGExecutor:
         self._builder = builder
         self._tester = tester
         self._analyzer = analyzer
-        self._mesh_agents = mesh_agents or []
         # P0-2: Track which files each node touched, for cross-node dependency detection
         self._node_file_map: dict[str, list[str]] = {}
         self._dynamic_edges_injected: list[dict] = []
@@ -76,7 +74,6 @@ class DAGExecutor:
             builder=self._builder,
             tester=self._tester,
             analyzer=self._analyzer,
-            mesh_agents=self._mesh_agents,
         )
         task_id = f"{dag.task_id}-{node.id}"
         result = await controller.run(node_spec, task_id=task_id)

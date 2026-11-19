@@ -410,17 +410,6 @@ def doctor(project):
         click.echo("Some checks failed. Fix the issues above before running.")
 
 
-@cli.command()
-@click.option("--project", required=True, type=click.Path(exists=True), help="Project directory")
-@click.option("--spec", required=True, type=click.Path(exists=True), help="Spec YAML file")
-@click.option("--baseline", default="single", type=click.Choice(["single", "opencode"]), help="Baseline type")
-def compare(project, spec, baseline):
-    click.echo("Comparison mode (demo harness)")
-    click.echo(f"Project: {project}")
-    click.echo(f"Baseline: {baseline}")
-    click.echo("Run 'python scripts/run_demo.py' for full demo comparison")
-
-
 def _fmt_tokens(n: int) -> str:
     if n >= 1000:
         return f"{n/1000:.1f}k"

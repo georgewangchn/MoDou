@@ -366,7 +366,6 @@ def test_dag_executor_initialization(temp_project_dir):
     assert executor._builder is None
     assert executor._tester is None
     assert executor._analyzer is None
-    assert executor._mesh_agents == []
 
 
 def test_dag_executor_with_agents(temp_project_dir):
