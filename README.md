@@ -343,7 +343,7 @@ asr/
 | RepairMode、Patch 限幅、Formal Guards、振荡检测、Circuit Breaker、退化回滚、Hysteresis、事件回放 | Implemented | 控制论收敛机制，见技术报告 v2.0 |
 | Assurance Core（Contract Registry / Deviation Engine / Feedback Controller 等） | Planned | 方案文档 §6.2；`asr assess` 提供最小可用子集，非完整 Core |
 | Analyzer / Verifier Plugin SDK、DEP 契约、跨系统集成 | Planned | 方案文档 §6.4–§6.5、§7、§10 阶段 5，本仓库未实现 |
-| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Experimental | P1 影子模式 + P2 校准体系已实现并实测：快照/分级/案卷/两级协议/四道门/存档/四分类对账；注入集 + `board-calibrate`（检出率/误报/不确定纪律三轮口径）+ `board-mark` PM 账本 + 评估员退避重试。写回（P3）未实现，校准 precision 门槛待 PM 标记 |
+| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Experimental | P1 影子模式 + P2 校准体系完成并实测通过：快照/分级/案卷/两级协议/四道门/存档/四分类对账；注入校准 **3/3 轮确定性门槛全过**（检出 100%、正常样本误报 0、不确定纪律 0 违例）。写回（P3）未实现；PM precision 门槛待抽检（`.modou/PMMARK.md`，21 条真实 findings） |
 
 Implemented 依据代码与测试标注，不代表已完成生产可用性、覆盖率或性能验证。
 
