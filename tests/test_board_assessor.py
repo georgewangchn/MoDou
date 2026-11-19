@@ -106,3 +106,47 @@ async def test_assess_dossier_via_opencode(tmp_path):
         r = await assess_dossier(d, tmp_path)
         assert m.await_count == 1
         assert r.verdict.findings[0].code == "EVIDENCE_GAP"
+
+
+@pytest.mark.asyncio
+async def test_assessor_env_retry_then_success(tmp_path, monkeypatch):
+    """Transport failures retry with backoff; success on third attempt."""
+    monkeypatch.setenv("MODOU_ASSESSOR_BACKOFF", "0,0,0")
+    import asr.assurance.assessor as mod
+    mod._RETRY_DELAYS = [0.0, 0.0, 0.0]
+    calls = {"n": 0}
+
+    async def flaky(prompt, workdir, label=""):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise RuntimeError("rate limited")
+        return GOOD_ITEM, 1, 1, 1
+
+    from asr.adapters.ousheng.snapshot import load_snapshot
+    from asr.assurance.dossier import build_item_dossier
+    from tests.board_fixture import build_board
+    board = build_board(tmp_path)
+    d = build_item_dossier(load_snapshot(board), load_snapshot(board).work_items["T-105"])
+    with patch("asr.assurance.assessor.opencode_completion", side_effect=flaky):
+        r = await assess_dossier(d, tmp_path)
+    assert calls["n"] == 3 and r.verdict.findings[0].code == "EVIDENCE_GAP"
+
+
+@pytest.mark.asyncio
+async def test_assessor_env_retry_exhausted_raises(tmp_path, monkeypatch):
+    monkeypatch.setenv("MODOU_ASSESSOR_BACKOFF", "0,0")
+    import asr.assurance.assessor as mod
+    mod._RETRY_DELAYS = [0.0, 0.0]
+
+    async def dead(prompt, workdir, label=""):
+        raise RuntimeError("down")
+
+    from asr.adapters.ousheng.snapshot import load_snapshot
+    from asr.assurance.dossier import build_item_dossier
+    from tests.board_fixture import build_board
+    board = build_board(tmp_path)
+    snap = load_snapshot(board)
+    d = build_item_dossier(snap, snap.work_items["T-105"])
+    with patch("asr.assurance.assessor.opencode_completion", side_effect=dead):
+        with pytest.raises(RuntimeError):
+            await assess_dossier(d, tmp_path)

@@ -262,6 +262,130 @@ def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
     raise SystemExit(report.exit_code())
 
 
+@cli.command(name="board-calibrate")
+@click.option("--suite", required=True, type=click.Path(),
+              help="Calibration suite dir (built on first run: injection board + expected.json)")
+@click.option("--workdir", default=None, type=click.Path(), help="Assessor staging dir")
+@click.option("--store-dir", default=None, type=click.Path(), help="Assessment archive dir")
+@click.option("--ledger", default=None, type=click.Path(), help="PM quality ledger file (default .modou/quality-ledger.jsonl)")
+@click.option("--rules-file", default=None, type=click.Path(exists=True),
+              help="OuSheng rules doc injected into every dossier (recommended: governance semantics need the rulebook)")
+@click.option("--rules-ref", default=None, help="Version ref for the rules doc")
+@click.option("--rounds", default=1, type=int, help="Calibration rounds; ALL rounds must pass (LLM nondeterminism guard, use 3 for real calibration)")
+@click.option("--json-output", default=None, type=click.Path(), help="Write calibration result JSON here")
+def board_calibrate(suite, workdir, store_dir, ledger, rules_file, rules_ref,
+                    rounds, json_output):
+    """校准：对注入集跑完整管线，对照 ground truth 出指标与门槛裁决。
+
+    门槛（P2 冻结）：注入检出率 100%、正常样本误报 0、不确定纪律零违例
+    （--rounds N 时全部轮次通过才算过）；precision 门槛由 PM 标记账本
+    单独判定（≥0.8 且 n≥20）。校准不通过 = 停在影子模式（合法终态）。
+    """
+    import json as _json
+
+    from asr.assurance.calibration import (
+        Thresholds, build_calibration_suite, evaluate,
+    )
+    from asr.assurance.pipeline import run_board_assessment
+    from asr.assurance.store import AssessmentStore
+
+    suite_dir = Path(suite)
+    if not (suite_dir / "board").exists():
+        build_calibration_suite(suite_dir)
+        click.echo(f"Built injection suite at {suite_dir}")
+    truth = _json.loads((suite_dir / "expected.json").read_text())
+    item_ids = [c["id"] for c in truth["cases"] if c.get("kind", "item") == "item"]
+
+    th = Thresholds()
+    all_rounds: list[dict] = []
+    ok = True
+    for rnd in range(1, max(1, rounds) + 1):
+        report = asyncio.run(run_board_assessment(
+            board_dir=suite_dir / "board",
+            items=item_ids,
+            rules_file=rules_file, rules_ref=rules_ref,
+            workdir=workdir,
+            store=AssessmentStore(Path(store_dir) if store_dir
+                                  else Path(".modou/calib-assessments")),
+        ))
+        metrics = evaluate(report.to_dict(), truth)
+        checks = th.check(metrics)
+        rnd_ok = all(c["pass"] for c in checks)
+        ok = ok and rnd_ok
+        all_rounds.append({"round": rnd, "metrics": metrics.to_dict(),
+                           "checks": checks, "pass": rnd_ok})
+        if rounds > 1:
+            click.echo(f"— Round {rnd}/{rounds}: "
+                       f"detection={metrics.detection_rate():.0%} "
+                       f"fp={len(metrics.false_positives)} "
+                       f"violations={len(metrics.inconclusive_violations)} "
+                       f"[{'PASS' if rnd_ok else 'FAIL'}]")
+        last = metrics
+
+    click.echo(f"Detection rate: {last.detection_rate():.0%} "
+               f"({len(last.expected_hits)}/{last.injections_total})")
+    if last.expected_misses:
+        click.echo("  MISSES: " + "; ".join(last.expected_misses))
+    click.echo(f"False positives on normals: {len(last.false_positives)}/{last.normal_total}"
+               + (f" → {last.false_positives}" if last.false_positives else ""))
+    if last.inconclusive_violations:
+        click.echo("INCONCLUSIVE discipline violations: " + "; ".join(last.inconclusive_violations))
+    from asr.assurance.calibration import QualityLedger
+    led = QualityLedger(Path(ledger) if ledger else Path(".modou/quality-ledger.jsonl"))
+    n, p = led.precision()
+    click.echo(f"PM-marked precision: {p if p is None else f'{p:.0%}'} (n={n})")
+    click.echo("-" * 60)
+    pcheck = th.precision_check(led)
+    ok = ok and pcheck["pass"]
+    for c in all_rounds[-1]["checks"]:
+        click.echo(f"[{'PASS' if c['pass'] else 'FAIL'}] {c['criterion']}: "
+                   f"{c['value']} (required {c['required']})")
+    click.echo(f"[{'PASS' if pcheck['pass'] else 'FAIL'}] {pcheck['criterion']}: "
+               f"{pcheck['value']} (required {pcheck['required']})")
+    verdict = "CALIBRATED — writeback may be enabled (P3, still needs PM authorization)" if ok \
+        else "NOT CALIBRATED — stay in shadow mode (legal terminal state)"
+    click.echo(verdict)
+
+    if json_output:
+        out = Path(json_output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps({
+            "rounds": all_rounds, "precision_check": pcheck, "calibrated": ok,
+        }, ensure_ascii=False, indent=2))
+        click.echo(f"\n📄 Calibration JSON: {out}")
+    raise SystemExit(0 if ok else 1)
+
+
+@cli.command(name="board-mark")
+@click.option("--assessment", required=True, type=click.Path(exists=True), help="Assessment JSON file")
+@click.option("--finding-index", default=None, type=int, help="Index into findings[] (0-based)")
+@click.option("--fingerprint", default=None, help="Finding fingerprint (alternative to index)")
+@click.option("--verdict", required=True, type=click.Choice(["tp", "fp"]), help="tp=true positive, fp=false positive")
+@click.option("--by", "marked_by", required=True, help="Marking human (e.g. pm)")
+@click.option("--note", default="", help="Optional note")
+@click.option("--ledger", default=None, type=click.Path(), help="Ledger file (default .modou/quality-ledger.jsonl)")
+def board_mark(assessment, finding_index, fingerprint, verdict, marked_by, note, ledger):
+    """PM 抽检标记：对某条 finding 记 tp/fp，进质量账本（MODOU 本地，不写 board）。"""
+    import json as _json
+
+    from asr.assurance.calibration import QualityLedger
+
+    data = _json.loads(Path(assessment).read_text())
+    findings = data.get("findings", [])
+    if fingerprint is None:
+        if finding_index is None or not (0 <= finding_index < len(findings)):
+            raise SystemExit("ERROR: provide --finding-index (0..%d) or --fingerprint" % (len(findings) - 1))
+        fingerprint = findings[finding_index].get("fingerprint")
+    if not fingerprint:
+        raise SystemExit("ERROR: finding has no fingerprint; re-run assessment (P1 pipeline stamps them)")
+
+    led = QualityLedger(Path(ledger) if ledger else Path(".modou/quality-ledger.jsonl"))
+    entry = led.mark(fingerprint, verdict, marked_by, note)
+    n, p = led.precision()
+    click.echo(f"Marked {fingerprint} as {verdict} by {marked_by}. "
+               f"Ledger: n={n}, precision={p if p is None else f'{p:.0%}'}")
+
+
 @cli.command(name="run-dag")
 @click.option("--project", required=True, type=click.Path(exists=True), help="Project directory")
 @click.option("--spec", required=True, type=click.Path(exists=True), help="Spec YAML file")

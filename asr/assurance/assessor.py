@@ -8,6 +8,8 @@ never to PASS — the Analyzer degradation discipline, reused.
 """
 from __future__ import annotations
 
+import asyncio
+import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -146,8 +148,29 @@ def build_prompt(dossier) -> str:
     return f"{protocol}{_OUTPUT_SPEC}\n\n===== 案卷开始 =====\n{dossier.render()}\n===== 案卷结束 ====="
 
 
+# Environment-failure backoff (transport robustness only; parse failures are
+# model output and degrade to INCONCLUSIVE — never retried, never PASS).
+_RETRY_DELAYS = [float(x) for x in os.environ.get("MODOU_ASSESSOR_BACKOFF", "5,15,45").split(",")]
+
+
+async def _opencode_with_retry(prompt: str, workdir: Path):
+    last_err: Exception | None = None
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            text, pt, ct, tt = await opencode_completion(
+                prompt, workdir, label="modou-assessor")
+            if text and text.strip():
+                return text, pt, ct, tt
+            last_err = RuntimeError("assessor returned empty output")
+        except Exception as e:  # env/transport errors (rate limits, crashes)
+            last_err = e
+        if attempt < len(_RETRY_DELAYS):
+            await asyncio.sleep(_RETRY_DELAYS[attempt])
+    raise last_err if last_err else RuntimeError("assessor failed")
+
+
 async def assess_dossier(dossier, workdir: Path) -> AssessorResult:
-    """Run the LLM assessor over a dossier. Raises on opencode/env failure."""
-    text, _pt, _ct, _tt = await opencode_completion(
-        build_prompt(dossier), Path(workdir), label="modou-assessor")
+    """Run the LLM assessor over a dossier. Raises on opencode/env failure
+    after bounded retry (pipeline maps that to BLOCKED, never PASS)."""
+    text, _pt, _ct, _tt = await _opencode_with_retry(build_prompt(dossier), Path(workdir))
     return parse_assessor_output(text, dossier.kind)
