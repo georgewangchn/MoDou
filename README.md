@@ -343,7 +343,7 @@ asr/
 | RepairMode、Patch 限幅、Formal Guards、振荡检测、Circuit Breaker、退化回滚、Hysteresis、事件回放 | Implemented | 控制论收敛机制，见技术报告 v2.0 |
 | Assurance Core（Contract Registry / Deviation Engine / Feedback Controller 等） | Planned | 方案文档 §6.2；`asr assess` 提供最小可用子集，非完整 Core |
 | Analyzer / Verifier Plugin SDK、DEP 契约、跨系统集成 | Planned | 方案文档 §6.4–§6.5、§7、§10 阶段 5，本仓库未实现 |
-| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Planned | 见 `docs/MODOU_OuSheng_偏差分析集成方案.md`（Final 1.0 开发基线），P1 开发中 |
+| 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Experimental | P1 影子模式已实现并在真实 board（425 items / 15 designs）验证：快照固定、分级路由（T0/T1/T2）、案卷装配、LLM 两级协议、四道门、assessment 存档。写回与校准（P2/P3）未实现 |
 
 Implemented 依据代码与测试标注，不代表已完成生产可用性、覆盖率或性能验证。
 

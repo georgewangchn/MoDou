@@ -37,7 +37,7 @@ def test_run_verification_parses_pytest_output(tmp_path):
         "tests/test_x.py::test_b FAILED [100%]\n"
         "1 failed, 1 passed\n"
     )
-    with patch("asr.assurance.subprocess.run", return_value=_fake_proc(stdout, 1)) as mock:
+    with patch("asr.assurance.project.subprocess.run", return_value=_fake_proc(stdout, 1)) as mock:
         verification, captured = run_verification(tmp_path)
 
     assert verification.total == 2
@@ -50,7 +50,7 @@ def test_run_verification_parses_pytest_output(tmp_path):
 
 
 def test_run_verification_reports_environment_error(tmp_path):
-    with patch("asr.assurance.subprocess.run", side_effect=FileNotFoundError("pytest")):
+    with patch("asr.assurance.project.subprocess.run", side_effect=FileNotFoundError("pytest")):
         verification, stdout = run_verification(tmp_path)
     assert stdout.startswith("ENVIRONMENT_ERROR:")
     assert verification.total == 0
@@ -89,7 +89,7 @@ def test_assess_does_not_invoke_builder(tmp_path):
         "# Demo\n\n## Acceptance\n- user_login\n", encoding="utf-8"
     )
     stdout = "tests/test_login.py::test_user_login PASSED [100%]\n1 passed\n"
-    with patch("asr.assurance.subprocess.run", return_value=_fake_proc(stdout, 0)):
+    with patch("asr.assurance.project.subprocess.run", return_value=_fake_proc(stdout, 0)):
         result = asyncio.run(assess(tmp_path, use_analyzer=False))
 
     assert result.status == STATUS_PASS
@@ -107,7 +107,7 @@ def test_assess_marks_failed_verification_as_deviation(tmp_path):
         "tests/test_login.py::test_user_login FAILED [100%]\n"
         "E   AssertionError: expected 1\n"
     )
-    with patch("asr.assurance.subprocess.run", return_value=_fake_proc(stdout, 1)):
+    with patch("asr.assurance.project.subprocess.run", return_value=_fake_proc(stdout, 1)):
         result = asyncio.run(assess(tmp_path, use_analyzer=False))
 
     assert result.status == STATUS_DEVIATION
@@ -121,7 +121,7 @@ def test_cli_assess_writes_json_and_returns_exit_code(tmp_path):
     stdout = "tests/test_login.py::test_user_login PASSED [100%]\n1 passed\n"
     output = tmp_path / "assessment.json"
 
-    with patch("asr.assurance.subprocess.run", return_value=_fake_proc(stdout, 0)):
+    with patch("asr.assurance.project.subprocess.run", return_value=_fake_proc(stdout, 0)):
         response = CliRunner().invoke(cli, [
             "assess", "--project", str(tmp_path),
             "--no-analyzer", "--json-output", str(output),

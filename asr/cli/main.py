@@ -175,6 +175,78 @@ def assess(project, spec, no_analyzer, json_output, timeout, basetemp):
     raise SystemExit(EXIT_NOT_CONVERGED)
 
 
+@cli.command(name="board-assess")
+@click.option("--board", required=True, type=click.Path(exists=True),
+              help="OuSheng board git clone (READ-ONLY; never pushed by this command)")
+@click.option("--as-of", default="HEAD", help="Board git revision to pin the snapshot to")
+@click.option("--design", "designs", multiple=True, help="Design topic(s) to assess (default: all decided)")
+@click.option("--item", "item_ids", multiple=True, help="Explicit work item id(s) to assess individually")
+@click.option("--sample-rate", default=0.0, type=float, help="T1 sampling rate 0..1 (ordinary done/testing items)")
+@click.option("--rules-file", default=None, type=click.Path(exists=True),
+              help="OuSheng published rules doc rendered into every dossier (rules page)")
+@click.option("--rules-ref", default=None, help="Version ref for the rules doc (e.g. wth@<sha>)")
+@click.option("--no-llm", is_flag=True,
+              help="Plumbing mode: grade+assemble only; every assessment is INCONCLUSIVE by construction")
+@click.option("--workdir", default=None, type=click.Path(), help="Staging dir for the assessor (default: temp)")
+@click.option("--store-dir", default=None, type=click.Path(), help="Assessment archive dir (default: ./.modou/assessments)")
+@click.option("--reassess-of", default=None, help="Assessment id this run re-verifies (only with --item)")
+@click.option("--json-output", default=None, type=click.Path(), help="Write the full report JSON here")
+def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
+                 rules_ref, no_llm, workdir, store_dir, reassess_of, json_output):
+    """绳上保证（模式 C）：对 OuSheng board 只读影子偏差分析。
+
+    两级分析：decided design → item 级 + design 级聚合；T1 按 --sample-rate 抽样。
+    默认静默：结果只落 MODOU 自己的存档，不写 board。
+
+    Exit codes: 0=all PASS, 1=any DEVIATION/INCONCLUSIVE, 2=BLOCKED/environment.
+    """
+    import json as _json
+
+    from asr.adapters.ousheng.snapshot import SnapshotError
+    from asr.assurance.pipeline import run_board_assessment
+    from asr.assurance.store import AssessmentStore
+
+    try:
+        report = asyncio.run(run_board_assessment(
+            board_dir=Path(board).resolve(),
+            rev=as_of,
+            designs=list(designs) or None,
+            items=list(item_ids) or None,
+            sample_rate=sample_rate,
+            rules_file=rules_file,
+            rules_ref=rules_ref,
+            no_llm=no_llm,
+            workdir=workdir,
+            reassess_of=reassess_of,
+            store=AssessmentStore(Path(store_dir) if store_dir else Path(".modou/assessments")),
+        ))
+    except (SnapshotError, ValueError) as e:
+        click.echo(f"BLOCKED: {e}")
+        raise SystemExit(EXIT_ENV_ERROR)
+
+    c = report.tier_coverage
+    click.echo(f"Board: {report.board}  as_of: {report.as_of_commit}  mode: {report.analyzer_mode}")
+    click.echo(f"Tier coverage: T0={c.get('T0', 0)} T1={c.get('T1', 0)} "
+               f"(sampled @ {report.sample_rate:.0%}) T2-skipped={c.get('T2', 0)}")
+    click.echo("-" * 60)
+    for a in report.assessments:
+        click.echo(a.summary_line())
+        for f in a.findings:
+            click.echo(f"  · [{f.severity}/{f.confidence}] {f.code}: {f.actual[:100]}")
+        for d in a.dropped_findings:
+            click.echo(f"  ○ dropped: {d['code']} ({d['reason'][:80]})")
+    if report.errors:
+        click.echo("Errors: " + "; ".join(report.errors))
+
+    if json_output:
+        out = Path(json_output)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        click.echo(f"\n📄 Report JSON: {out}")
+
+    raise SystemExit(report.exit_code())
+
+
 @cli.command(name="run-dag")
 @click.option("--project", required=True, type=click.Path(exists=True), help="Project directory")
 @click.option("--spec", required=True, type=click.Path(exists=True), help="Spec YAML file")
