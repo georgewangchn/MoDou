@@ -183,7 +183,10 @@ TRUTH = {"cases": [
      "accept_alternatives": ["EVIDENCE_GAP"]},
     {"id": "T-G", "kind": "item", "expect": [["AUTHORIZATION_GAP", "CONSTRAINT_VIOLATION"]]},
     {"id": "calib", "kind": "design", "subject": "calib", "expect": ["TASK_COVERAGE_GAP"]},
-    {"id": "T-D", "kind": "item", "expect": ["TARGET_MISS", "EVIDENCE_GAP"]},
+    {"id": "T-D", "kind": "item",
+     # same deviation fact (release evidence never covers the target version):
+     # equivalent encodings across the deliverable/truthfulness neighbors
+     "expect": ["TARGET_MISS", "EVIDENCE_GAP", "FALSE_COMPLETION", "QUALITY_FAILURE"]},
 ]}
 
 
@@ -206,9 +209,11 @@ def build_calibration_suite(root: Path) -> Path:
     _work(board, "T-A", "task", "正常交付任务", "data", "testing",
           "description: 实现导出功能\n"
           "evidence:\n  - type: test_result\n    source: test\n"
-          "    locator: docs/T-A-test-report.md\n    result: passed\n")
+          "    locator: docs/T-A-test-report.md\n    result: passed\n"
+          "    observed_at: \"2026-11-19T10:00:00+08:00\"\n")
     (board / "docs/T-A-test-report.md").write_text(
         "# T-A 独立测试报告（test 席位出具）\n"
+        "- 被测构建：data 仓 commit 3f2a1b9（报告出具时该席位 HEAD）\n"
         "- 命令：pytest tests/test_export.py -v\n"
         "- 结果：12 passed, 0 failed，退出码 0\n"
         "- 覆盖：导出全路径 E2E（含边界）\n")
