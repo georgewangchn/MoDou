@@ -199,12 +199,19 @@ def build_calibration_suite(root: Path) -> Path:
         "systems:\n  - id: data\n    name: data\n  - id: mlake\n    name: mlake\n")
     (board / ".ousheng/roles.yaml").write_text("roles:\n  - id: dev\n")
 
-    # T-A normal: done + resolved document evidence
-    _work(board, "T-A", "task", "正常交付任务", "data", "done",
-          "description: 实现导出功能\nevidence:\n  - type: document\n    source: dev\n"
-          "    locator: docs/T-A-acceptance.md\n    result: passed\n")
-    (board / "docs/T-A-acceptance.md").write_text(
-        "# T-A 验收\n- 全量回归通过\n- 导出功能 E2E 验证通过\n")
+    # T-A normal: independent test evidence (source=test, not the assignee),
+    # resolvable report with command+outcome — a genuinely CLEAN case.
+    # (A self-authored acceptance doc by the assignee is NOT clean — it is
+    # self-certification, exactly what MODOU exists to catch.)
+    _work(board, "T-A", "task", "正常交付任务", "data", "testing",
+          "description: 实现导出功能\n"
+          "evidence:\n  - type: test_result\n    source: test\n"
+          "    locator: docs/T-A-test-report.md\n    result: passed\n")
+    (board / "docs/T-A-test-report.md").write_text(
+        "# T-A 独立测试报告（test 席位出具）\n"
+        "- 命令：pytest tests/test_export.py -v\n"
+        "- 结果：12 passed, 0 failed，退出码 0\n"
+        "- 覆盖：导出全路径 E2E（含边界）\n")
     # T-B: done, no evidence → EVIDENCE_GAP
     _work(board, "T-B", "task", "无证据交付任务", "data", "done",
           "description: 实现导入功能\n")

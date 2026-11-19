@@ -78,3 +78,16 @@ def test_broken_yaml_blocks(tmp_path: Path):
 def test_missing_board_dir(tmp_path: Path):
     with pytest.raises(SnapshotError, match="not found"):
         load_snapshot(tmp_path / "nope")
+
+
+def test_human_ack_parsed_and_visible(board: Path):
+    """breaking+no-ack must be VISIBLE in the dossier (authorization-gap fuel)."""
+    from asr.assurance.dossier import build_item_dossier
+    snap = load_snapshot(board)
+    # T-105 on the synth board: breaking contract without ack
+    item = snap.work_items["T-105"]
+    assert item.contract.get("breaking") is True
+    assert item.human_ack is None
+    d = build_item_dossier(snap, item)
+    page = d.pages["tasks/T-105"]
+    assert "human_ack" in page and "null" in page  # explicit absence, not hidden

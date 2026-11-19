@@ -94,6 +94,7 @@ class WorkItem:
     depends_on: list[str] = field(default_factory=list)
     related_to: list[str] = field(default_factory=list)
     contract: dict = field(default_factory=dict)
+    human_ack: dict | None = None
     evidence: list[EvidenceEntry] = field(default_factory=list)
 
 
@@ -161,6 +162,8 @@ def _parse_work_item(path: str, data: dict) -> WorkItem:
     item.related_to = [str(x) for x in (data.get("related_to") or [])]
     contract = data.get("contract")
     item.contract = dict(contract) if isinstance(contract, dict) else {}
+    ack = data.get("human_ack")
+    item.human_ack = dict(ack) if isinstance(ack, dict) else None
     for ev in data.get("evidence") or []:
         if not isinstance(ev, dict):
             continue

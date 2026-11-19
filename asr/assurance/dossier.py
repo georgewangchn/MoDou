@@ -82,6 +82,7 @@ def _item_page(item: WorkItem) -> str:
         "target_version": item.target_version, "priority": item.priority,
         "due_on": item.due_on, "depends_on": item.depends_on,
         "related_to": item.related_to, "contract": item.contract or None,
+        "human_ack": item.human_ack,  # null = not acknowledged (breaking+null ⇒ authorization gap)
         "description": item.description or None,
         "evidence": [
             {"n": i + 1, "type": e.type, "source": e.source, "locator": e.locator,
