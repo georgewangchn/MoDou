@@ -190,9 +190,12 @@ def assess(project, spec, no_analyzer, json_output, timeout, basetemp):
 @click.option("--workdir", default=None, type=click.Path(), help="Staging dir for the assessor (default: temp)")
 @click.option("--store-dir", default=None, type=click.Path(), help="Assessment archive dir (default: ./.modou/assessments)")
 @click.option("--reassess-of", default=None, help="Assessment id this run re-verifies (only with --item)")
+@click.option("--converge-report", default=None, type=click.Path(exists=True),
+              help="OuSheng `converge` text output for the cross-check metric (CONFIRMED_OVERLAP/MODOU_ONLY/CONVERGE_ONLY)")
 @click.option("--json-output", default=None, type=click.Path(), help="Write the full report JSON here")
 def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
-                 rules_ref, no_llm, workdir, store_dir, reassess_of, json_output):
+                 rules_ref, no_llm, workdir, store_dir, reassess_of,
+                 converge_report, json_output):
     """绳上保证（模式 C）：对 OuSheng board 只读影子偏差分析。
 
     两级分析：decided design → item 级 + design 级聚合；T1 按 --sample-rate 抽样。
@@ -238,10 +241,22 @@ def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
     if report.errors:
         click.echo("Errors: " + "; ".join(report.errors))
 
+    report_dict = report.to_dict()
+    if converge_report:
+        from asr.assurance.xcheck import cross_check
+        cc = cross_check(report_dict, Path(converge_report).read_text())
+        report_dict["cross_check"] = cc.to_dict()
+        click.echo("-" * 60)
+        click.echo(f"Cross-check vs converge [{cc.converge_status}]: "
+                   f"overlap={len(cc.confirmed_overlap)} "
+                   f"modou_only={len(cc.modou_only)} "
+                   f"converge_only={len(cc.converge_only)} "
+                   f"disagreement=N/A(P2+)")
+
     if json_output:
         out = Path(json_output)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(_json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+        out.write_text(_json.dumps(report_dict, ensure_ascii=False, indent=2))
         click.echo(f"\n📄 Report JSON: {out}")
 
     raise SystemExit(report.exit_code())
