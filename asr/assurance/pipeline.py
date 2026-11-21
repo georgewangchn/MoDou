@@ -12,8 +12,9 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from asr.adapters.ousheng.snapshot import load_snapshot, resolve_rev
+from asr.adapters.base import get_adapter
 from asr.assurance.assessor import AssessorResult, assess_dossier
+from asr.assurance.board_model import BoardSnapshot  # noqa: F401 — re-exported for typing callers
 from asr.assurance.compose import (
     Assessment,
     AssessorVerdict,
@@ -80,10 +81,12 @@ async def run_board_assessment(
     gate_cfg: GateConfig | None = None,
     reassess_of: str | None = None,
     store: AssessmentStore | None = None,
+    org: str = "ousheng",
 ) -> BoardAssessReport:
     board_dir = Path(board_dir)
-    rev = resolve_rev(board_dir, rev)  # pin symbolic HEAD to its sha
-    snap = load_snapshot(board_dir, rev)
+    adapter = get_adapter(org)
+    rev = adapter.resolve_rev(board_dir, rev)  # pin symbolic HEAD to its sha
+    snap = adapter.load_snapshot(board_dir, rev)
     gate_cfg = gate_cfg or GateConfig()
 
     graded = grade_board(snap, sample_rate=sample_rate)

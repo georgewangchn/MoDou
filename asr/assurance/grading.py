@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from asr.adapters.ousheng.snapshot import BoardSnapshot
+from asr.assurance.board_model import BoardSnapshot
 
 T0, T1, T2 = "T0", "T1", "T2"
 

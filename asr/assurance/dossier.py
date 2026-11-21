@@ -15,13 +15,13 @@ from datetime import UTC, datetime
 
 import yaml
 
-from asr.adapters.ousheng.snapshot import (
+from asr.assurance.board_model import (
     BoardSnapshot,
     DesignRecord,
     EvidenceEntry,
     WorkItem,
-    _git,
 )
+from asr.git_read import git_read as _git
 
 PAGE_CAP_BYTES = 8 * 1024  # per-page content cap; truncation is noted in-page
 _SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
@@ -67,13 +67,12 @@ def _resolve_locator(snapshot: BoardSnapshot, ev: EvidenceEntry) -> tuple[str, s
     if loc.startswith(("http://", "https://", "ssh://")):
         return "UNRESOLVED", f"external locator not fetched: {loc}"
     # Board-internal path?
-    proc = _git(snapshot.board_dir, "cat-file", "-e", f"{snapshot.rev}:{loc}", check=False)
+    proc = _git(snapshot.board_dir, "cat-file", "-e", f"{snapshot.rev}:{loc}")
     if proc.returncode == 0:
-        try:
-            content = _git(snapshot.board_dir, "show", f"{snapshot.rev}:{loc}").stdout
-            return "RESOLVED", _cap(content)
-        except Exception as e:  # pragma: no cover — defensive
-            return "UNRESOLVED", f"read failed: {e}"
+        show = _git(snapshot.board_dir, "show", f"{snapshot.rev}:{loc}")
+        if show.returncode == 0:
+            return "RESOLVED", _cap(show.stdout)
+        return "UNRESOLVED", f"read failed: git rc={show.returncode}"
     return "UNRESOLVED", f"locator not found in board tree at {snapshot.rev}: {loc}"
 
 

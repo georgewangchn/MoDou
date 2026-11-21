@@ -12,12 +12,25 @@ than silently vanishing from it.
 from __future__ import annotations
 
 import subprocess
-from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from asr.envs import hermetic_git_env
+from asr.assurance.board_model import (
+    DESIGN_DECIDED_STATUSES,
+    BoardSnapshot,
+    DesignRecord,
+    EvidenceEntry,
+    WorkItem,
+)
+from asr.git_read import git_read
+
+__all__ = [
+    "SnapshotError", "load_snapshot", "resolve_rev",
+    "BoardSnapshot", "DesignRecord", "EvidenceEntry", "WorkItem",
+    "DESIGN_DECIDED_STATUSES", "WORK_DIR", "DESIGN_DIR", "ACTORS_DIR",
+    "SUPPORTED_WORK_SCHEMA",
+]
 
 # Board layout (OuSheng v0.3 runtime, schema_version=2 work items)
 WORK_DIR = ".ousheng/work"
@@ -25,7 +38,6 @@ DESIGN_DIR = ".ousheng/designs"
 ACTORS_DIR = ".ousheng/actors"
 
 SUPPORTED_WORK_SCHEMA = 2
-DESIGN_DECIDED_STATUSES = {"agreed", "decided"}
 
 
 class SnapshotError(Exception):
@@ -40,22 +52,14 @@ def resolve_rev(board_dir: Path, rev: str) -> str:
     """
     if rev != "HEAD":
         return rev
-    proc = subprocess.run(
-        ["git", "-C", str(board_dir), "rev-parse", "HEAD"],
-        capture_output=True, text=True, env=hermetic_git_env(),
-    )
+    proc = git_read(board_dir, "rev-parse", "HEAD")
     if proc.returncode != 0:
         raise SnapshotError(f"git rev-parse HEAD failed: {proc.stderr.strip()[:200]}")
     return proc.stdout.strip()
 
 
 def _git(board_dir: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-    proc = subprocess.run(
-        ["git", "-C", str(board_dir), *args],
-        capture_output=True,
-        text=True,
-        env=hermetic_git_env(),
-    )
+    proc = git_read(board_dir, *args)
     if check and proc.returncode != 0:
         raise SnapshotError(f"git {' '.join(args[:2])}… failed: {proc.stderr.strip()[:300]}")
     return proc
@@ -80,80 +84,6 @@ def _load_yaml(text: str, path: str) -> dict:
     if not isinstance(data, dict):
         raise SnapshotError(f"{path}: expected mapping, got {type(data).__name__}")
     return data
-
-
-@dataclass
-class EvidenceEntry:
-    type: str = ""
-    source: str = ""
-    locator: str = ""
-    result: str = ""
-    observed_at: str = ""
-    note: str = ""
-
-
-@dataclass
-class WorkItem:
-    id: str
-    path: str
-    schema_version: int = 0
-    type: str = ""
-    title: str = ""
-    system: str = ""
-    target_version: str = ""
-    priority: str = ""
-    due_on: str = ""
-    status: str = ""
-    revision: int = 0
-    assignee: str = ""
-    acting_role: str = ""
-    accountable_human: str = ""
-    detected_by: str = ""
-    description: str = ""
-    depends_on: list[str] = field(default_factory=list)
-    related_to: list[str] = field(default_factory=list)
-    contract: dict = field(default_factory=dict)
-    human_ack: dict | None = None
-    evidence: list[EvidenceEntry] = field(default_factory=list)
-
-
-@dataclass
-class DesignRecord:
-    topic: str
-    path: str
-    status: str = ""
-    owner: str = ""
-    systems: list[str] = field(default_factory=list)
-    related_items: list[str] = field(default_factory=list)
-    decided_by: str = ""
-    decided_at: str = ""
-    body: str = ""
-    frontmatter_raw: dict = field(default_factory=dict)
-
-
-@dataclass
-class BoardSnapshot:
-    board_dir: Path
-    rev: str
-    project: dict = field(default_factory=dict)
-    systems: dict = field(default_factory=dict)
-    roles: dict = field(default_factory=dict)
-    work_items: dict[str, WorkItem] = field(default_factory=dict)
-    designs: dict[str, DesignRecord] = field(default_factory=dict)
-
-    @property
-    def decided_designs(self) -> dict[str, DesignRecord]:
-        return {
-            t: d for t, d in self.designs.items()
-            if d.status in DESIGN_DECIDED_STATUSES
-        }
-
-    def t0_closure(self) -> set[str]:
-        """Item ids covered by decided designs' structured related_items."""
-        ids: set[str] = set()
-        for d in self.decided_designs.values():
-            ids.update(d.related_items)
-        return {i for i in ids if i in self.work_items}
 
 
 def _parse_work_item(path: str, data: dict) -> WorkItem:
