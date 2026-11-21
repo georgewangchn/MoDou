@@ -26,6 +26,7 @@ from typing import Any
 import yaml
 
 from asr.agents.tester import _parse_pytest_output
+from asr.assurance.compose import new_assessment_id as _new_assessment_id
 from asr.config.models import AgentConfig
 from asr.spec.models import AcceptanceCriteria, Constraint, Specification
 
@@ -104,10 +105,13 @@ class Assessment:
     findings: list[Finding] = field(default_factory=list)
     acceptance: list[dict[str, Any]] = field(default_factory=list)
     analyzer_mode: str = "skipped"
+    decision_ref: str | None = None
+    assessment_id: str = field(default_factory=lambda: _new_assessment_id())
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
+            "assessment_id": self.assessment_id,
             "status": self.status,
             "project": self.project,
             "spec_source": self.spec_source,
@@ -116,6 +120,7 @@ class Assessment:
             "findings": [f.to_dict() for f in self.findings],
             "acceptance": self.acceptance,
             "analyzer_mode": self.analyzer_mode,
+            "decision_ref": self.decision_ref,
             "created_at": self.created_at,
         }
 
@@ -376,6 +381,11 @@ def _determine_status(
     if any(f.code == "INCONCLUSIVE" for f in findings):
         return STATUS_INCONCLUSIVE
 
+    # 验收基准本身不完整（SPEC_INCOMPLETE）时，"有证据"建立在残缺基准上，
+    # PASS 不成立——降为 INCONCLUSIVE（信号同时进 MOSS 规格质量反馈流）。
+    if any(f.code == "SPEC_INCOMPLETE" for f in findings):
+        return STATUS_INCONCLUSIVE
+
     # 没有可核验的验收标准时，测试全绿只说明“执行完成”，不等于“目标达成”（§3.2）
     if not acceptance or not all(a.get("evidenced") for a in acceptance):
         return STATUS_INCONCLUSIVE
@@ -466,4 +476,5 @@ async def assess(
         findings=findings,
         acceptance=acceptance,
         analyzer_mode=analyzer_mode,
+        decision_ref=spec.decision_ref,
     )

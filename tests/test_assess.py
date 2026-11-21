@@ -101,6 +101,17 @@ def test_determine_status_analyzer_degradation_never_pass():
     assert _determine_status(green, both, evidenced, "spec.yaml", "") == STATUS_DEVIATION
 
 
+def test_determine_status_incomplete_spec_never_pass():
+    """回归（MOSS 反馈通道联调发现）：验收基准不完整（SPEC_INCOMPLETE）
+    时，测试全绿+验收有证据也不得 PASS——证据建立在残缺基准上。"""
+    green = Verification(total=10, passed=10)
+    evidenced = [{"name": "a", "evidenced": True}]
+    incomplete = Finding(code="SPEC_INCOMPLETE", message="goal is required",
+                         severity="MEDIUM", source="acceptance")
+    assert _determine_status(green, [incomplete], evidenced, "spec.yaml", "") \
+        == STATUS_INCONCLUSIVE
+
+
 def test_assess_does_not_invoke_builder(tmp_path):
     (tmp_path / "DESIGN.md").write_text(
         "# Demo\n\n## Acceptance\n- user_login\n", encoding="utf-8"
