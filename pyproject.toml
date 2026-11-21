@@ -63,7 +63,7 @@ testpaths = ["tests"]
 [tool.ruff]
 target-version = "py311"
 line-length = 100
-extend-exclude = ["video", ".venv", ".venv-video", "demo_dev"]
+extend-exclude = ["video", ".venv", ".venv-video", "demo_dev", ".modou"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
@@ -85,4 +85,4 @@ no_implicit_optional = true
 warn_redundant_casts = true
 # asr uses implicit namespace packages (no __init__.py at several levels)
 explicit_package_bases = true
-exclude = ["video/", "demo_dev/"]
+exclude = ["video/", "demo_dev/", ".modou/"]
