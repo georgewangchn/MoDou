@@ -20,10 +20,10 @@ Builder 只作为**被评估的执行插件**，不参与评估判定。
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-2.0-4CAF50?style=flat-square)](#)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](#)
-[![Python](https://img.shields.io/badge/Python-3.12+-3776AB?style=flat-square&logo=python&logoColor=white)](#)
-[![Tests](https://img.shields.io/badge/tests-259%20passed-brightgreen?style=flat-square)](#)
+[![Version](https://img.shields.io/badge/version-3.0.0-4CAF50?style=flat-square)](#)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](#)
+[![CI](https://github.com/georgewangchn/MoDou/actions/workflows/ci.yml/badge.svg)](https://github.com/georgewangchn/MoDou/actions/workflows/ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-ff69b4?style=flat-square)](#)
 
 <br>
@@ -308,7 +308,7 @@ asr/
 │   ├── events/                       # 事件类型 + EventStore
 │   ├── dag/                          # Task DAG 并行执行
 │   └── runtime.py                    # 收敛运行时入口
-├── tests/                            # 单元测试（259 passed）
+├── tests/                            # 单元测试（全绿，见 CI badge；数量以 CI 为准）
 │   └── test_assess.py                #   独立评估引擎测试
 ├── pyproject.toml                    # 包定义 + asr CLI 入口
 └── .env.example                      # 环境变量配置模板
@@ -392,11 +392,12 @@ Implemented 依据代码与测试标注，不代表已完成生产可用性、�
 
 | 变量 | 必填 | 说明 |
 |------|:---:|------|
-| `FEASIBILITY_LLM_API_BASE` | ✅ | OpenAI 兼容接口地址 |
-| `FEASIBILITY_LLM_API_KEY` | ✅ | API 密钥（本地部署可填 `empty`） |
-| `FEASIBILITY_LLM_MODEL` | ✅ | 模型名称 |
+| `FEASIBILITY_LLM_API_BASE` | | 仅作参考值写入默认配置；实际 LLM 端点在 `opencode.json` 配置 |
+| `FEASIBILITY_LLM_API_KEY` | | **已不读取**（3.0.0 起不再写入 `asr_config.yaml`）；真实密钥只放 `opencode.json` 或 opencode 全局配置 |
+| `FEASIBILITY_LLM_MODEL` | | 默认模型参考值；实际模型在 `opencode.json` 配置 |
 | `FEASIBILITY_LLM_CONTEXT` | | 上下文窗口大小（默认 131072） |
-| `ASR_OPENCODE_TIMEOUT` | | opencode 调用超时秒数（默认 24400） |
+| `ASR_OPENCODE_TIMEOUT` | | opencode 单次调用超时秒数（默认 1800；超时终止子进程并报错，防挂起） |
+| `ASR_OPENCODE_AUTO` | | 设为 `1` 时给 opencode 追加 `--auto`（自动批准未显式拒绝的权限）。默认关闭，权限决策走各项目 `opencode.json` 白名单 |
 | `ASR_VERBOSE` | | 设为 `1` 启用详细日志 |
 
 </details>
@@ -405,6 +406,9 @@ Implemented 依据代码与测试标注，不代表已完成生产可用性、�
 
 | 文档 | 说明 |
 |---|---|
+| 📄 [CHANGELOG](./CHANGELOG.md) | 版本变更记录（含 3.0.0 安全加固与行为变更说明） |
+| 🤝 [贡献指南](./CONTRIBUTING.md) | 开发环境、提交规范与不可破坏的项目纪律 |
+| 🔒 [安全策略](./SECURITY.md) | 漏洞报告渠道与已知设计边界 |
 | 📖 [技术报告 (v2.0)](./AI%20Software%20runtime%28ASR%29技术报告.md) | 原 ASR 技术报告：系统架构设计、控制论优化体系、端到端验证、DAG 调度、事件总线。文件名为历史外链，保留不改 |
 | 💡 原始构想 | 《Supervise-Agent：有监督长任务自动化软件工程系统》—— 项目最初想法：分层裁决 + 多 Agent 协同 + 工程约束。文档已从仓库移除，故不提供链接 |
 | 🌐 [在线演示](https://georgewangchn.github.io/MoDou/) | 系统效果验证测试报告，对比四种方案的实际生成效果 |
