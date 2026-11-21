@@ -140,9 +140,14 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
 @click.option("--enable-verifier", "verifiers", multiple=True,
               help="Deterministic verifier plugin(s) to run (e.g. compile_check; Experimental)")
 @click.option("--json-output", default=None, type=click.Path(), help="Write structured Assessment to a JSON file")
+@click.option("--decision-ref", default=None,
+              help="Opaque decision anchor (MOSS-owned format) recorded on the assessment/feedback")
+@click.option("--feedback-dir", default=None, type=click.Path(),
+              help="Write a modou/feedback@1 envelope for MOSS here (pull-based decision channel; Experimental)")
 @click.option("--timeout", default=600, type=int, help="pytest timeout in seconds")
 @click.option("--basetemp", default=None, type=click.Path(), help="pytest basetemp (use a workspace path under sandboxes)")
-def assess(project, spec, no_analyzer, verifiers, json_output, timeout, basetemp):
+def assess(project, spec, no_analyzer, verifiers, json_output,
+           decision_ref, feedback_dir, timeout, basetemp):
     """独立评估：Tester 验证 + Analyzer 偏差分析。不调用 Builder，不修改交付物。
 
     Exit codes: 0=PASS, 1=DEVIATION/INCONCLUSIVE, 2=BLOCKED/environment error.
@@ -164,6 +169,8 @@ def assess(project, spec, no_analyzer, verifiers, json_output, timeout, basetemp
         basetemp=basetemp_path,
         verifier_names=list(verifiers) or None,
     ))
+    if decision_ref:
+        result.decision_ref = decision_ref
 
     click.echo(result.to_text())
     if json_output:
@@ -171,6 +178,14 @@ def assess(project, spec, no_analyzer, verifiers, json_output, timeout, basetemp
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(_json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
         click.echo(f"\n📄 Assessment JSON: {out}")
+    if feedback_dir:
+        from asr.assurance.decision_feedback import (
+            feedback_from_assessment_dict,
+            write_feedback,
+        )
+        env = feedback_from_assessment_dict(result.to_dict())
+        fb_path = write_feedback(env, feedback_dir)
+        click.echo(f"📮 Decision feedback: {fb_path} (modou/feedback@1)")
 
     if result.status == STATUS_PASS:
         raise SystemExit(EXIT_CONVERGED)
@@ -197,9 +212,15 @@ def assess(project, spec, no_analyzer, verifiers, json_output, timeout, basetemp
 @click.option("--converge-report", default=None, type=click.Path(exists=True),
               help="OuSheng `converge` text output for the cross-check metric (CONFIRMED_OVERLAP/MODOU_ONLY/CONVERGE_ONLY)")
 @click.option("--json-output", default=None, type=click.Path(), help="Write the full report JSON here")
+@click.option("--decision-ref", default=None,
+              help="Opaque decision anchor (MOSS-owned format) stamped onto feedback envelopes")
+@click.option("--feedback-dir", default=None, type=click.Path(),
+              help="Write modou/feedback@1 envelopes per assessment for MOSS (pull-based; Experimental)")
+@click.option("--ledger", default=None, type=click.Path(),
+              help="PM quality ledger for envelope confidence (default .modou/quality-ledger.jsonl)")
 def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
                  rules_ref, no_llm, workdir, store_dir, reassess_of,
-                 converge_report, json_output):
+                 converge_report, json_output, decision_ref, feedback_dir, ledger):
     """绳上保证（模式 C）：对 OuSheng board 只读影子偏差分析。
 
     两级分析：decided design → item 级 + design 级聚合；T1 按 --sample-rate 抽样。
@@ -226,6 +247,9 @@ def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
             workdir=workdir,
             reassess_of=reassess_of,
             store=AssessmentStore(Path(store_dir) if store_dir else Path(".modou/assessments")),
+            decision_ref=decision_ref,
+            feedback_dir=feedback_dir,
+            ledger_path=ledger,
         ))
     except (SnapshotError, ValueError) as e:
         click.echo(f"BLOCKED: {e}")
@@ -244,6 +268,8 @@ def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
             click.echo(f"  ○ dropped: {d['code']} ({d['reason'][:80]})")
     if report.errors:
         click.echo("Errors: " + "; ".join(report.errors))
+    if feedback_dir:
+        click.echo(f"📮 Decision feedback: {len(report.assessments)} envelope(s) → {feedback_dir} (modou/feedback@1)")
 
     report_dict = report.to_dict()
     if converge_report:
@@ -458,8 +484,13 @@ def board_writeback(assessment, board, execute, actor, corrections_ledger,
 @click.option("--rules-file", default=None, type=click.Path(exists=True))
 @click.option("--rules-ref", default=None)
 @click.option("--workdir", default=None, type=click.Path())
+@click.option("--feedback-dir", default=None, type=click.Path(),
+              help="Write modou/feedback@1 envelopes per cycle for MOSS (Experimental)")
+@click.option("--ledger", default=None, type=click.Path(),
+              help="PM quality ledger for envelope confidence (default .modou/quality-ledger.jsonl)")
 def board_watch(board, store_dir, interval, once, no_fetch, designs,
-                sample_rate, rules_file, rules_ref, workdir):
+                sample_rate, rules_file, rules_ref, workdir,
+                feedback_dir, ledger):
     """定时影子巡检（P4）：fetch→定 sha→评估→存档→趋势账本，循环。
 
     无人值守纪律：每周期隔离，任何失败记入周期日志后继续（BLOCKED 是周期
@@ -473,7 +504,9 @@ def board_watch(board, store_dir, interval, once, no_fetch, designs,
     store = AssessmentStore(Path(store_dir) if store_dir else Path(".modou/assessments"))
     kwargs = dict(fetch=not no_fetch, designs=list(designs) or None,
                   sample_rate=sample_rate, rules_file=rules_file,
-                  rules_ref=rules_ref, workdir=workdir)
+                  rules_ref=rules_ref, workdir=workdir,
+                  feedback_dir=feedback_dir,
+                  ledger_path=ledger or ".modou/quality-ledger.jsonl")
     if once:
         s = _aio.run(run_cycle(1, Path(board).resolve(), store, **kwargs))
         click.echo(f"cycle {s.cycle} rev={s.rev[:10]} subjects={len(s.statuses)} "
@@ -508,6 +541,37 @@ def board_trend(store_dir, json_output):
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(_json.dumps(t, ensure_ascii=False, indent=2))
         click.echo(f"📄 Trend JSON: {out}")
+
+
+@cli.command(name="feedback-export")
+@click.option("--assessment", required=True, type=click.Path(exists=True),
+              help="Stored/exported assessment JSON (mode A or mode C format)")
+@click.option("--out-dir", default=None, type=click.Path(),
+              help="Feedback dir (default .modou/feedback)")
+@click.option("--decision-ref", default=None,
+              help="Decision anchor override (else taken from the assessment)")
+@click.option("--ledger", default=None, type=click.Path(),
+              help="PM quality ledger for confidence (default .modou/quality-ledger.jsonl)")
+def feedback_export(assessment, out_dir, decision_ref, ledger):
+    """决策反馈导出（Experimental）：把既有 assessment 转成 modou/feedback@1 信封。
+
+    MOSS 接入期不必重跑评估——对存档/导出的 Assessment JSON 逐份追溯生成。
+    仅路由决策层 findings（BASELINE_DEFICIENT/SPEC_INCOMPLETE/TARGET_MISS）。
+    """
+    import json as _json
+
+    from asr.assurance.decision_feedback import (
+        feedback_from_assessment_dict,
+        write_feedback,
+    )
+
+    data = _json.loads(Path(assessment).read_text())
+    env = feedback_from_assessment_dict(
+        data, decision_ref=decision_ref, ledger_path=ledger or ".modou/quality-ledger.jsonl")
+    path = write_feedback(env, out_dir or ".modou/feedback")
+    click.echo(f"📮 {env.feedback_id} → {path}")
+    click.echo(f"  decision_ref={env.decision_ref} status={env.deliverable_accepted} "
+               f"decision_findings={len(env.decision_findings)}")
 
 
 @cli.command(name="board-mark")

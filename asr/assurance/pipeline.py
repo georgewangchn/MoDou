@@ -82,6 +82,9 @@ async def run_board_assessment(
     reassess_of: str | None = None,
     store: AssessmentStore | None = None,
     org: str = "ousheng",
+    decision_ref: str | None = None,
+    feedback_dir: Path | str | None = None,
+    ledger_path: Path | str | None = None,
 ) -> BoardAssessReport:
     board_dir = Path(board_dir)
     adapter = get_adapter(org)
@@ -172,6 +175,19 @@ async def run_board_assessment(
     if store:
         for a in report.assessments:
             store.save(a)
+    if feedback_dir:
+        # Decision-feedback channel (MoDou → MOSS, pull-based): one
+        # modou/feedback@1 envelope per assessment, decision-layer findings
+        # only — execution findings keep their MCP-writeback destination.
+        from asr.assurance.decision_feedback import build_feedback, write_feedback
+        for a in report.assessments:
+            env = build_feedback(
+                assessment_id=a.assessment_id, subject=a.subject,
+                status=a.status, findings=a.findings,
+                kind=a.kind, decision_ref=decision_ref,
+                reassessment_of=a.reassessment_of,
+                ledger_path=ledger_path)
+            write_feedback(env, feedback_dir)
     return report
 
 

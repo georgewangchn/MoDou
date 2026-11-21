@@ -78,7 +78,9 @@ async def run_cycle(cycle: int, board_dir: Path, store: AssessmentStore,
                     rules_file: str | None = None,
                     rules_ref: str | None = None,
                     workdir: Path | None = None,
-                    gate_cfg: GateConfig | None = None) -> CycleSummary:
+                    gate_cfg: GateConfig | None = None,
+                    feedback_dir: Path | str | None = None,
+                    ledger_path: Path | str | None = None) -> CycleSummary:
     started = datetime.now(UTC).isoformat()
     s = CycleSummary(cycle=cycle, started_at=started, board="", rev=rev or "HEAD")
     try:
@@ -92,7 +94,7 @@ async def run_cycle(cycle: int, board_dir: Path, store: AssessmentStore,
             board_dir=board_dir, rev=s.rev, designs=designs,
             sample_rate=sample_rate, rules_file=rules_file,
             rules_ref=rules_ref, workdir=workdir, gate_cfg=gate_cfg,
-            store=store)
+            store=store, feedback_dir=feedback_dir, ledger_path=ledger_path)
         s.board = report.board
         s.errors = list(report.errors)
         current_fps: set[str] = set()

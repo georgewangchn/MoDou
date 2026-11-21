@@ -32,6 +32,10 @@ class Specification(BaseModel):
     constraints: list[Constraint] = Field(default_factory=list)
     acceptance: list[AcceptanceCriteria] = Field(default_factory=list)
     features: list[Feature] = Field(default_factory=list)
+    # Opaque anchor to the decision that produced this spec (MOSS-owned
+    # format, e.g. "MOSS-DEC-...@v4"). MoDou passes it through verbatim into
+    # assessments and feedback envelopes — never interprets it.
+    decision_ref: str | None = None
 
     @model_validator(mode="before")
     @classmethod
