@@ -28,7 +28,7 @@ CLI 子命令：`init` / `doctor` / `run`（收敛插件）、`assess`（独立�
 
 ## 目录结构
 
-- `asr/` — 核心包：`__init__.py`（公共 API 面 v1：`import asr` → `assess`/`Assessment`/四态）、`assurance/`（独立评估引擎：assessor/pipeline/grading/watch/writeback/board_model 等）、`agents/`（builder/tester/analyzer/opencode_backend）、`controller/convergence.py`（控制论收敛）、`cli/main.py`（CLI 入口）、`adapters/base.py`（组织运行时协议+注册表）与 `adapters/ousheng/`（唯一知道 board 格式的防腐层）、`plugins.py`+`verifiers/`（Verifier SDK 与内置插件）、`git_read.py`（中立 git 只读工具）、`config|events|dag|patch|spec|memory/`
+- `asr/` — 核心包：`__init__.py`（公共 API 面 v1：`import asr` → `assess`/`Assessment`/四态）、`assurance/`（独立评估引擎：assessor/pipeline/grading/watch/writeback/board_model/decision_feedback 等）、`agents/`（builder/tester/analyzer/opencode_backend）、`controller/convergence.py`（控制论收敛）、`cli/main.py`（CLI 入口）、`adapters/base.py`（组织运行时协议+注册表）与 `adapters/ousheng/`（唯一知道 board 格式的防腐层）、`plugins.py`+`verifiers/`（Verifier SDK 与内置插件）、`git_read.py`（中立 git 只读工具）、`config|events|dag|patch|spec|memory/`
 - `tests/` — 全部测试（顶层，`asr/tests/` 只是残留 `__pycache__`，无测试）；`board_fixture.py` 与 `fake_mcp_server.py` 是 board 系列测试的关键 fixture
 - `docs/MODOU_OuSheng_偏差分析集成方案.md` — 模式 C 设计基线（Final 1.0，设计冻结）
 - `AI Software runtime(ASR)技术报告.md` — 技术报告 v2.0（文件名为历史外链，勿改名）

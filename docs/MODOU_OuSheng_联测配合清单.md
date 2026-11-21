@@ -40,6 +40,22 @@
 - 评估只读纪律：全程不写 board；写回仅经 MCP + 校准达标 + PM 授权三前置
 - 模拟测试报告与逐轮证据：`/tmp/modou-simlab/results.jsonl`（或随附归档）
 
+## D. MOSS 集成（3.2.0 起，决策反馈通道）
+
+MoDou → MOSS 为**拉取式文件契约**（`modou/feedback@1` 信封，`--feedback-dir`
+落盘，默认 `.modou/feedback/`）。MOSS 侧需要：
+
+| # | 事项 | 说明 |
+|---|---|---|
+| D1 | **`decision_ref` 编码格式** | MOSS 定义决策 ID+版本格式（如 `MOSS-DEC-…@vN`）；MoDou 全程透传不解释，出现在 spec YAML / Assessment / 信封三处 |
+| D2 | **拉取节奏与游标策略** | 建议决策评估触发时拉取（非常驻轮询）；信封文件名 `FB-*.json` 时间戳有序，目录扫描即游标 |
+| D3 | **采纳策略** | `INCONCLUSIVE` 与置信度 SHADOW 期的反馈建议一律人工核验（与"证据不足不默认 PASS"对称）；`reassessment_of` 链用于原地更新 |
+| D4 | **消费粒度** | L0 退出码（0/1/2）→ L1 反馈信封（主消费面）→ L2 Assessment 存档（审计证据链下钻） |
+| D5 | **规格质量反馈闭环确认** | 收到 `BASELINE_DEFICIENT`/`SPEC_INCOMPLETE` 后由 MOSS 修订决策/验收标准，经 OuSheng 重走执行 → MoDou 复验（`--reassess-of`） |
+
+三流分流说明：执行层 findings（EVIDENCE_GAP 等）**不进**决策通道——它们已有
+去处（模式 C 经 MCP 写回 OuSheng backlog，PM 分诊=授权）。
+
 ---
 
-**联系**：将本清单转给 OuSheng 侧后，联测排期建议按 A（阻塞项）→ B1/B3/B4（核心链路）→ B6-B8（生产启用）顺序推进。
+**联系**：将本清单转给 OuSheng/MOSS 侧后，联测排期建议按 A（阻塞项）→ B1/B3/B4（核心链路）→ B6-B8（生产启用）→ D（决策反馈）顺序推进。

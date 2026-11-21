@@ -27,7 +27,7 @@ from asr.assurance import (  # noqa: F401
     run_verification,
 )
 
-__version__ = "3.1.0"
+__version__ = "3.2.0"
 
 # Semantic identifier of this public surface (semver-tracked via __version__).
 API_VERSION = "modou/public-api@1"

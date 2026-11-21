@@ -3,6 +3,36 @@
 本项目的全部显著变更记录在此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [3.2.0] — 2026-11-21
+
+主题：**MoDou → MOSS 决策反馈通道**（三 Runtime 统一体系的第三条集成边）。
+
+### 新增（Experimental）
+
+- **`modou/feedback@1` 反馈信封**（`asr/assurance/decision_feedback.py`）：
+  拉取式文件契约——MoDou 只落盘、从不推送，MOSS 按自己的节奏拉取并挂回决策
+  版本；与 cruise 退出码、PM last-run.json 同姿态（非席位、无常驻、非阻塞）。
+  三条反馈流：
+  ① 决策结果（status + 验收证据计数）；② 规格质量（仅
+  `BASELINE_DEFICIENT`/`SPEC_INCOMPLETE`/`TARGET_MISS` 路由给决策层——
+  执行层 findings 保持 MCP 写回通道，不进决策通道）；③ 置信度（PM 抽检
+  precision 与校准状态，无账本时如实为 null，绝不猜值）。
+- **`decision_ref` 决策锚点贯穿**：spec YAML 可带 `decision_ref`（MOSS 自有
+  格式，MoDou 透传不解释）→ Assessment → 反馈信封；`reassessment_of` 链保留
+  （MOSS 原地更新决策结果，不新开）。
+- **CLI**：`asr assess --decision-ref/--feedback-dir`、`board-assess` 同、
+  `board-watch --feedback-dir`（每周期顺带产出）、独立子命令 `feedback-export`
+  （对存档 Assessment JSON 追溯生成信封——MOSS 接入期不必重跑评估）。
+- 模式 A Assessment 增加 `assessment_id` 与 `decision_ref` 字段（新增字段，
+  向后兼容）。
+
+### 修复
+
+- **验收基准不完整时不得 PASS**（反馈通道联调演示发现）：spec 缺 goal 等
+  `SPEC_INCOMPLETE` 场景下，测试全绿+验收有证据曾判 PASS——证据建立在
+  残缺基准上，现降为 INCONCLUSIVE（该信号同时是 MOSS 规格质量反馈流的
+  主载荷）。含回归测试。
+
 ## [3.1.0] — 2026-11-21
 
 主题：三 Runtime 统一体系的**高内聚低耦合**落地（设计基线 §1 硬约束一、§3.1
