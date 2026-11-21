@@ -137,10 +137,12 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
 @click.option("--project", required=True, type=click.Path(exists=True), help="Project directory under assessment")
 @click.option("--spec", default=None, type=click.Path(exists=True), help="Spec YAML file (optional; reads DESIGN.md if omitted)")
 @click.option("--no-analyzer", is_flag=True, help="Skip semantic analysis; deterministic verification only")
+@click.option("--enable-verifier", "verifiers", multiple=True,
+              help="Deterministic verifier plugin(s) to run (e.g. compile_check; Experimental)")
 @click.option("--json-output", default=None, type=click.Path(), help="Write structured Assessment to a JSON file")
 @click.option("--timeout", default=600, type=int, help="pytest timeout in seconds")
 @click.option("--basetemp", default=None, type=click.Path(), help="pytest basetemp (use a workspace path under sandboxes)")
-def assess(project, spec, no_analyzer, json_output, timeout, basetemp):
+def assess(project, spec, no_analyzer, verifiers, json_output, timeout, basetemp):
     """独立评估：Tester 验证 + Analyzer 偏差分析。不调用 Builder，不修改交付物。
 
     Exit codes: 0=PASS, 1=DEVIATION/INCONCLUSIVE, 2=BLOCKED/environment error.
@@ -160,6 +162,7 @@ def assess(project, spec, no_analyzer, json_output, timeout, basetemp):
         use_analyzer=not no_analyzer,
         timeout=timeout,
         basetemp=basetemp_path,
+        verifier_names=list(verifiers) or None,
     ))
 
     click.echo(result.to_text())

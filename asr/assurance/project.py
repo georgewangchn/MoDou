@@ -390,8 +390,13 @@ async def assess(
     timeout: int = 600,
     basetemp: Path | None = None,
     pytest_args: list[str] | None = None,
+    verifier_names: list[str] | None = None,
 ) -> Assessment:
-    """执行一次独立评估。不调用 Builder，不修改交付文件。"""
+    """执行一次独立评估。不调用 Builder，不修改交付文件。
+
+    ``verifier_names`` 显式启用确定性 verifier 插件（默认不启用——
+    Experimental 纪律：判定语义不随插件内置而静默改变）。
+    """
     project_dir = project_dir.resolve()
     spec, spec_source = _load_spec(project_dir, spec_path)
 
@@ -441,7 +446,16 @@ async def assess(
             f.code == "INCONCLUSIVE" for f in analyzer_findings):
         analyzer_mode = "degraded"
 
-    findings = gaps + analyzer_findings
+    verifier_findings: list[Finding] = []
+    if verifier_names:
+        from asr import plugins
+        for vn in verifier_names:
+            verifier_findings += plugins.run_verifier_safely(
+                plugins.get_verifier(vn), project_dir)
+    if verifier_findings:
+        analyzer_mode += "+verifiers"
+
+    findings = gaps + analyzer_findings + verifier_findings
     status = _determine_status(verification, findings, acceptance, spec_source, stdout)
     return Assessment(
         status=status,
