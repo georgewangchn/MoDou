@@ -5,9 +5,9 @@ from pathlib import Path
 
 import click
 
-from asr.config.loader import load_config, create_default_config
-from asr.runtime import ASRRuntime
 from asr.agents.llm_tracker import get_agent_tokens
+from asr.config.loader import create_default_config, load_config
+from asr.runtime import ASRRuntime
 
 # Exit codes for non-interactive callers (e.g. ousheng cruise mode driving
 # MoDou as a subprocess). Keep stable: callers branch on them.
@@ -41,10 +41,10 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
     Exit codes: 0=converged, 1=not converged (max iterations/stuck),
     2=environment error (opencode CLI missing, bad spec/config, crash).
     """
-    from asr.controller.convergence import ConvergenceState
-
     # Pre-flight: check opencode availability (environment error → exit 2)
     import shutil as _shutil
+
+    from asr.controller.convergence import ConvergenceState
     if not _shutil.which("opencode"):
         click.echo("ERROR: 'opencode' CLI not found in PATH.")
         click.echo("Install it:  npm install -g opencode-ai")
@@ -55,7 +55,7 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
         config = load_config(config_path) if config_path else create_default_config()
     except Exception as exc:
         click.echo(f"ERROR: failed to load config: {exc}")
-        raise SystemExit(EXIT_ENV_ERROR)
+        raise SystemExit(EXIT_ENV_ERROR) from None
     if max_iterations:
         config.convergence.max_iterations = max_iterations
 
@@ -103,14 +103,14 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
         raise
     except Exception as exc:
         click.echo(f"ERROR: MoDou runtime crashed: {exc}")
-        raise SystemExit(EXIT_ENV_ERROR)
+        raise SystemExit(EXIT_ENV_ERROR) from None
 
     click.echo()
     dag_info = result.summary.get("dag", {}) if result.summary else {}
     if dag_info:
         click.echo(f"Mode: DAG | Nodes: {dag_info.get('total_nodes', '?')} | Converged: {dag_info.get('converged', '?')} | Stuck: {dag_info.get('stuck', '?')}")
         if result.state == ConvergenceState.CONVERGED:
-            click.echo(f"✅ CONVERGED — all DAG nodes converged")
+            click.echo("✅ CONVERGED — all DAG nodes converged")
             exit_code = EXIT_CONVERGED
         else:
             click.echo(f"❌ STUCK — {dag_info.get('stuck', 0)} of {dag_info.get('total_nodes', '?')} nodes failed")
@@ -127,8 +127,8 @@ def run(project, spec, config_path, max_iterations, decoupled, verbose):
             click.echo(f"❌ 卡住 — {reason}")
             exit_code = EXIT_NOT_CONVERGED
         click.echo(f"迭代轮次: {result.iterations} | 事件数: {len(result.events)}")
-        click.echo(f"\n📁 详细日志: .runtime/logs/asr.log")
-        click.echo(f"📁 LLM 追踪: .runtime/logs/llm.jsonl")
+        click.echo("\n📁 详细日志: .runtime/logs/asr.log")
+        click.echo("📁 LLM 追踪: .runtime/logs/llm.jsonl")
 
     raise SystemExit(exit_code)
 
@@ -147,7 +147,8 @@ def assess(project, spec, no_analyzer, json_output, timeout, basetemp):
     """
     import json as _json
 
-    from asr.assurance import STATUS_BLOCKED, STATUS_PASS, assess as run_assessment
+    from asr.assurance import STATUS_BLOCKED, STATUS_PASS
+    from asr.assurance import assess as run_assessment
 
     project_dir = Path(project).resolve()
     spec_path = Path(spec).resolve() if spec else None
@@ -225,7 +226,7 @@ def board_assess(board, as_of, designs, item_ids, sample_rate, rules_file,
         ))
     except (SnapshotError, ValueError) as e:
         click.echo(f"BLOCKED: {e}")
-        raise SystemExit(EXIT_ENV_ERROR)
+        raise SystemExit(EXIT_ENV_ERROR) from None
 
     c = report.tier_coverage
     click.echo(f"Board: {report.board}  as_of: {report.as_of_commit}  mode: {report.analyzer_mode}")
@@ -284,7 +285,9 @@ def board_calibrate(suite, workdir, store_dir, ledger, rules_file, rules_ref,
     import json as _json
 
     from asr.assurance.calibration import (
-        Thresholds, build_calibration_suite, evaluate,
+        Thresholds,
+        build_calibration_suite,
+        evaluate,
     )
     from asr.assurance.pipeline import run_board_assessment
     from asr.assurance.store import AssessmentStore
@@ -380,12 +383,22 @@ def board_writeback(assessment, board, execute, actor, corrections_ledger,
     from asr.adapters.ousheng.mcp_client import OuShengMCPClient
     from asr.adapters.ousheng.snapshot import load_snapshot
     from asr.assurance.feedback import (
-        CorrectionsLedger, WritebackPolicy, execute_writeback,
-        false_positive_fingerprints, plan_writeback,
+        CorrectionsLedger,
+        WritebackPolicy,
+        execute_writeback,
+        false_positive_fingerprints,
+        plan_writeback,
         subject_systems_from_snapshot,
     )
 
     data = _json.loads(Path(assessment).read_text())
+    if "assessment_id" not in data or "findings" not in data:
+        # A board-assess --json-output *report* ({"assessments": [...]}) is the
+        # most common wrong input; name the actual store file instead.
+        click.echo(
+            "ERROR: --assessment expects a single assessment JSON (an ASM-*.json "
+            f"from the assessment store), got keys: {sorted(data)[:6]}")
+        raise SystemExit(EXIT_ENV_ERROR)
     snap = load_snapshot(Path(board))
     systems = subject_systems_from_snapshot(snap)
     data.setdefault("scope", {})["subject_systems"] = systems
@@ -512,13 +525,13 @@ def board_mark(assessment, finding_index, fingerprint, verdict, marked_by, note,
     findings = data.get("findings", [])
     if fingerprint is None:
         if finding_index is None or not (0 <= finding_index < len(findings)):
-            raise SystemExit("ERROR: provide --finding-index (0..%d) or --fingerprint" % (len(findings) - 1))
+            raise SystemExit(f"ERROR: provide --finding-index (0..{len(findings) - 1}) or --fingerprint")
         fingerprint = findings[finding_index].get("fingerprint")
     if not fingerprint:
         raise SystemExit("ERROR: finding has no fingerprint; re-run assessment (P1 pipeline stamps them)")
 
     led = QualityLedger(Path(ledger) if ledger else Path(".modou/quality-ledger.jsonl"))
-    entry = led.mark(fingerprint, verdict, marked_by, note)
+    led.mark(fingerprint, verdict, marked_by, note)
     n, p = led.precision()
     click.echo(f"Marked {fingerprint} as {verdict} by {marked_by}. "
                f"Ledger: n={n}, precision={p if p is None else f'{p:.0%}'}")
@@ -534,7 +547,7 @@ def run_dag(project, spec, config_path, verbose):
     project_dir = Path(project).resolve()
     runtime = ASRRuntime(config)
 
-    click.echo(f"MoDou Runtime [DAG Mode]")
+    click.echo("MoDou Runtime [DAG Mode]")
     click.echo(f"Project: {project_dir}")
     click.echo()
 
@@ -652,7 +665,10 @@ _EXAMPLE_OPENCODE_CONFIG = """\
     "edit": "allow",
     "bash": {
       "*": "allow",
-      "rm -rf *": "deny"
+      "rm -rf *": "deny",
+      "sudo *": "deny",
+      "git push *": "deny",
+      "chmod -R 777 *": "deny"
     }
   }
 }
@@ -675,7 +691,7 @@ def doctor(project):
     # 1. Python version
     import sys as _sys
     click.echo(f"Python: {_sys.version.split()[0]} ", nl=False)
-    if _sys.version_info >= (3, 11):
+    if _sys.version_info >= (3, 11):  # noqa: UP036 — doctor is a diagnostic tool; the redundant check is its job
         click.echo("OK")
     else:
         click.echo("FAIL (need >= 3.11)")
@@ -716,7 +732,7 @@ def doctor(project):
 
     # 4. Project structure
     design = project_dir / "DESIGN.md"
-    click.echo(f"DESIGN.md: ", nl=False)
+    click.echo("DESIGN.md: ", nl=False)
     if design.exists():
         size = design.stat().st_size
         click.echo(f"OK ({size} bytes)")
@@ -730,23 +746,42 @@ def doctor(project):
         oc_config = project_dir / ".opencode" / "config.json"
     if not oc_config.exists():
         oc_config = Path.home() / ".config" / "opencode" / "opencode.json"
-    click.echo(f"opencode config: ", nl=False)
+    click.echo("opencode config: ", nl=False)
     if oc_config.exists():
         click.echo(f"OK ({oc_config})")
     else:
         click.echo("MISSING (asr init --project . to generate template)")
 
-    # 6. asr_config.yaml
+    # 6. asr_config.yaml — warn on persisted plaintext API keys (they belong
+    #    in .env or opencode's config, never inside the project tree)
     asr_config = project_dir / "asr_config.yaml"
-    click.echo(f"asr_config.yaml: ", nl=False)
+    click.echo("asr_config.yaml: ", nl=False)
     if asr_config.exists():
-        click.echo("OK")
+        try:
+            import yaml as _yaml
+            raw_cfg = _yaml.safe_load(asr_config.read_text()) or {}
+            exposed = [
+                a.get("role", "?")
+                for a in raw_cfg.get("agents", [])
+                if isinstance(a.get("model"), dict)
+                and a["model"].get("api_key") not in (None, "", "empty")
+                and not str(a["model"].get("api_key", "")).startswith("os.environ/")
+            ]
+            if exposed:
+                click.echo("WARNING — plaintext api_key")
+                click.echo(f"  agents with inline api_key: {', '.join(exposed)}")
+                click.echo("  move it to .env (gitignored) or 'os.environ/NAME' indirection;")
+                click.echo("  see git history risk if this file was ever committed")
+            else:
+                click.echo("OK")
+        except Exception:
+            click.echo("WARN (unparseable — defaults will be used)")
     else:
         click.echo("not found (will use defaults)")
 
     # 7. Runtime directories
     runtime = project_dir / ".runtime"
-    click.echo(f".runtime/: ", nl=False)
+    click.echo(".runtime/: ", nl=False)
     if runtime.exists():
         click.echo("OK")
     else:
@@ -809,7 +844,7 @@ def _show_progress(result) -> None:
     if last_patch:
         diff = last_patch.payload.get("diff_text", "")
         if diff:
-            click.echo(f"\n最后一次补丁 (前 200 字符):")
+            click.echo("\n最后一次补丁 (前 200 字符):")
             for line in diff.split("\n")[:6]:
                 click.echo(f"  {line[:100]}")
 

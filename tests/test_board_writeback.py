@@ -7,8 +7,12 @@ import pytest
 from click.testing import CliRunner
 
 from asr.assurance.feedback import (
-    CorrectionsLedger, WritebackPolicy, execute_writeback,
-    false_positive_fingerprints, plan_writeback, subject_systems_from_snapshot,
+    CorrectionsLedger,
+    WritebackPolicy,
+    execute_writeback,
+    false_positive_fingerprints,
+    plan_writeback,
+    subject_systems_from_snapshot,
 )
 from asr.cli.main import cli
 
@@ -41,9 +45,11 @@ def make_assessment(tmp: Path, findings=None) -> Path:
 
 
 def test_plan_filters_severity_and_budget():
-    from tests.board_fixture import build_board
+    import pathlib
+    import tempfile
+
     from asr.adapters.ousheng.snapshot import load_snapshot
-    import tempfile, pathlib
+    from tests.board_fixture import build_board
     with tempfile.TemporaryDirectory() as td:
         snap = load_snapshot(build_board(pathlib.Path(td)))
         systems = subject_systems_from_snapshot(snap)
@@ -120,7 +126,6 @@ def test_mcp_client_tool_error_raises(tmp_path):
 
 def test_execute_writeback_at_most_once(tmp_path):
     from asr.adapters.ousheng.mcp_client import OuShengMCPClient
-    from asr.assurance.feedback import Correction
     data = json.loads(make_assessment(tmp_path).read_text())
     led = CorrectionsLedger(tmp_path / "c.jsonl")
 
@@ -217,3 +222,20 @@ def test_cli_writeback_execute_via_fake_mcp(tmp_path, monkeypatch):
     assert ev["type"] == "document" and ev["work_id"] == "MD-900"
     assert ev["locator"].startswith("modou-assessment://ASM-TEST#")
     assert ev["expect"] == 1
+
+
+def test_cli_writeback_rejects_report_json_with_clear_error(tmp_path):
+    """Regression (sim-lab S8): feeding a board-assess *report* JSON used to
+    crash with KeyError('assessment_id'); it must fail loudly & readably."""
+    from asr.cli.main import cli
+    from tests.board_fixture import build_board
+
+    board = build_board(tmp_path / "b")
+    report = tmp_path / "report.json"
+    report.write_text(json.dumps({"assessments": [], "board": "x", "exit_code": 1}))
+    runner = CliRunner()
+    r = runner.invoke(cli, ["board-writeback", "--assessment", str(report),
+                            "--board", str(board)], catch_exceptions=False)
+    assert r.exit_code == 2
+    assert "single assessment JSON" in r.output
+    assert "assessments" in r.output  # names the wrong shape it received

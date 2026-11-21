@@ -6,10 +6,10 @@ from pathlib import Path
 import yaml
 
 from asr.config.models import (
-    ASRConfig,
-    ModelConfig,
     AgentConfig,
+    ASRConfig,
     ConvergenceConfig,
+    ModelConfig,
     RuntimeConfig,
 )
 
@@ -71,7 +71,11 @@ def create_default_config() -> ASRConfig:
         model_name = f"openai/{model_name}"
 
     api_base = dotenv.get("FEASIBILITY_LLM_API_BASE", "http://127.0.0.1:8000/v1")
-    api_key = dotenv.get("FEASIBILITY_LLM_API_KEY", "empty")
+    # Never inline the real FEASIBILITY_LLM_API_KEY: this config object is
+    # dumped to asr_config.yaml by `asr init`, and a persisted plaintext key
+    # tends to get committed. Auth happens in opencode's own config; the
+    # value here is a placeholder by design.
+    api_key = "empty"
 
     glm_model = ModelConfig(
         model=model_name,

@@ -17,6 +17,8 @@ from pathlib import Path
 
 import yaml
 
+from asr.envs import hermetic_git_env
+
 # Board layout (OuSheng v0.3 runtime, schema_version=2 work items)
 WORK_DIR = ".ousheng/work"
 DESIGN_DIR = ".ousheng/designs"
@@ -30,12 +32,29 @@ class SnapshotError(Exception):
     """Raised when the board snapshot cannot be loaded fail-loud."""
 
 
+def resolve_rev(board_dir: Path, rev: str) -> str:
+    """Resolve a symbolic rev (default HEAD) to its pinned sha.
+
+    Assessments must record an immutable commit id, never the symbolic
+    name — "as_of: HEAD" is untraceable the moment the branch moves.
+    """
+    if rev != "HEAD":
+        return rev
+    proc = subprocess.run(
+        ["git", "-C", str(board_dir), "rev-parse", "HEAD"],
+        capture_output=True, text=True, env=hermetic_git_env(),
+    )
+    if proc.returncode != 0:
+        raise SnapshotError(f"git rev-parse HEAD failed: {proc.stderr.strip()[:200]}")
+    return proc.stdout.strip()
+
+
 def _git(board_dir: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess:
     proc = subprocess.run(
         ["git", "-C", str(board_dir), *args],
         capture_output=True,
         text=True,
-        env={"GIT_TERMINAL_PROMPT": "0", "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"},
+        env=hermetic_git_env(),
     )
     if check and proc.returncode != 0:
         raise SnapshotError(f"git {' '.join(args[:2])}… failed: {proc.stderr.strip()[:300]}")
@@ -44,7 +63,7 @@ def _git(board_dir: Path, *args: str, check: bool = True) -> subprocess.Complete
 
 def _list_files(board_dir: Path, rev: str, tree: str) -> list[str]:
     out = _git(board_dir, "ls-tree", "-r", "--name-only", rev, "--", tree).stdout
-    return [l.strip() for l in out.splitlines() if l.strip()]
+    return [line.strip() for line in out.splitlines() if line.strip()]
 
 
 def _read_file(board_dir: Path, rev: str, path: str) -> str:

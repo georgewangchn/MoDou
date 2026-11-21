@@ -7,17 +7,22 @@ assessment files (default-shadow discipline).
 """
 from __future__ import annotations
 
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from asr.adapters.ousheng.snapshot import load_snapshot
+from asr.adapters.ousheng.snapshot import load_snapshot, resolve_rev
 from asr.assurance.assessor import AssessorResult, assess_dossier
 from asr.assurance.compose import (
-    Assessment, AssessorVerdict, GateConfig, apply_gates, compose_assessment,
+    Assessment,
+    AssessorVerdict,
+    GateConfig,
+    apply_gates,
+    compose_assessment,
     make_fingerprint,
 )
-from asr.assurance.dossier import build_design_dossier, build_item_dossier
+from asr.assurance.dossier import Dossier, build_design_dossier, build_item_dossier
 from asr.assurance.grading import grade_board
 from asr.assurance.store import AssessmentStore
 
@@ -77,6 +82,7 @@ async def run_board_assessment(
     store: AssessmentStore | None = None,
 ) -> BoardAssessReport:
     board_dir = Path(board_dir)
+    rev = resolve_rev(board_dir, rev)  # pin symbolic HEAD to its sha
     snap = load_snapshot(board_dir, rev)
     gate_cfg = gate_cfg or GateConfig()
 
@@ -98,7 +104,7 @@ async def run_board_assessment(
     if missing:
         raise ValueError(f"unknown design topic(s): {missing}")
 
-    jobs: list[tuple[str, object]] = [
+    jobs: list[tuple[str, Dossier]] = [
         ("design", build_design_dossier(snap, snap.designs[t],
                                         rules_text=rules_text, rules_ref=rules_ref))
         for t in design_topics
@@ -116,43 +122,48 @@ async def run_board_assessment(
         report.errors.append("nothing to assess (no decided designs, items or sample)")
         return report
 
+    # Staging dirs we created ourselves are transient scratch; clean them up
+    # on every exit path (a caller-provided --workdir is kept for inspection).
     staging = Path(workdir) if workdir else Path(tempfile.mkdtemp(prefix="modou-assess-"))
     staging.mkdir(parents=True, exist_ok=True)
+    try:
+        for kind, dossier in jobs:
+            baseline_refs = ([{"type": "design", "source": dossier.meta.get("design", ""),
+                               "git_rev": rev}] if kind == "design"
+                             else [{"type": "item", "source": dossier.subject, "git_rev": rev}])
+            scope = {"board": report.board, "as_of_commit": rev,
+                     "dossier_pages": sorted(dossier.pages),
+                     "tier": "T0" if kind == "design" else "T1-sample"}
 
-    for kind, dossier in jobs:
-        baseline_refs = ([{"type": "design", "source": dossier.meta.get("design", ""),
-                           "git_rev": rev}] if kind == "design"
-                         else [{"type": "item", "source": dossier.subject, "git_rev": rev}])
-        scope = {"board": report.board, "as_of_commit": rev,
-                 "dossier_pages": sorted(dossier.pages),
-                 "tier": "T0" if kind == "design" else "T1-sample"}
+            if no_llm:
+                verdict = AssessorVerdict(insufficient_evidence=True)
+                result = AssessorResult(verdict, raw_text="", parse_ok=True,
+                                        parse_notes=["no-llm plumbing mode: INCONCLUSIVE by construction"])
+            else:
+                try:
+                    result = await assess_dossier(dossier, staging)
+                    verdict = result.verdict
+                except Exception as e:
+                    a = Assessment(assessment_id="", kind=kind, subject=dossier.subject,
+                                   scope=scope, baseline_refs=baseline_refs,
+                                   reassessment_of=reassess_of)
+                    a.assessment_id = _blocked_id()
+                    a.status = "BLOCKED"
+                    a.assurance = {k: "UNASSESSED" for k in
+                                   ("governance", "execution", "deliverable", "outcome")}
+                    a.dropped_findings = [{"code": "N/A", "reason": f"assessor error: {e}"}]
+                    report.assessments.append(a)
+                    continue
 
-        if no_llm:
-            verdict = AssessorVerdict(insufficient_evidence=True)
-            result = AssessorResult(verdict, raw_text="", parse_ok=True,
-                                    parse_notes=["no-llm plumbing mode: INCONCLUSIVE by construction"])
-        else:
-            try:
-                result = await assess_dossier(dossier, staging)
-                verdict = result.verdict
-            except Exception as e:
-                a = Assessment(assessment_id="", kind=kind, subject=dossier.subject,
-                               scope=scope, baseline_refs=baseline_refs,
-                               reassessment_of=reassess_of)
-                a.assessment_id = _blocked_id()
-                a.status = "BLOCKED"
-                a.assurance = {k: "UNASSESSED" for k in
-                               ("governance", "execution", "deliverable", "outcome")}
-                a.dropped_findings = [{"code": "N/A", "reason": f"assessor error: {e}"}]
-                report.assessments.append(a)
-                continue
-
-        gates = apply_gates(verdict.findings, set(dossier.pages), gate_cfg)
-        a = compose_assessment(verdict, kind, dossier.subject, scope,
-                               baseline_refs, gates, reassessment_of=reassess_of)
-        if result.parse_notes:
-            a.scope["parse_notes"] = result.parse_notes
-        report.assessments.append(a)
+            gates = apply_gates(verdict.findings, set(dossier.pages), gate_cfg)
+            a = compose_assessment(verdict, kind, dossier.subject, scope,
+                                   baseline_refs, gates, reassessment_of=reassess_of)
+            if result.parse_notes:
+                a.scope["parse_notes"] = result.parse_notes
+            report.assessments.append(a)
+    finally:
+        if workdir is None:
+            shutil.rmtree(staging, ignore_errors=True)
 
     _stamp_fingerprints(report.assessments, rev)
     if store:

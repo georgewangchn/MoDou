@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import filecmp
+import logging
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-import filecmp
-
 from asr.agents.base import BaseAgent
 from asr.agents.llm_tracker import log_token_usage
 from asr.agents.opencode_backend import opencode_completion
 from asr.config.models import AgentConfig
 from asr.events.models import (
-    Event, EventType, AgentName,
-    TestFailedEvent, TestPassedEvent, TestErrorEvent, ErrorOccurredEvent,
+    AgentName,
+    ErrorOccurredEvent,
+    Event,
+    EventType,
+    TestErrorEvent,
+    TestFailedEvent,
+    TestPassedEvent,
 )
 from asr.events.store import EventStore
 
@@ -132,7 +137,6 @@ def _parse_pytest_output(stdout: str) -> dict:
                 break
             match = re.match(r'(FAILED|ERROR)\s+(\S+)\s*[-:]\s*(.*)', stripped)
             if match:
-                status_type = match.group(1)
                 nid = match.group(2)
                 msg = match.group(3).strip()
                 failures_detail[nid] = msg
@@ -296,19 +300,25 @@ class TesterAgent(BaseAgent):
 
         pip_req = sandbox / "requirements.txt"
         if pip_req.exists():
+            # NOTE: this requirements.txt was authored by the LLM (Builder).
+            # Installing it is by design (sandbox tests need the deps), but a
+            # failure must be observable, never silently swallowed.
             try:
-                subprocess.run(
+                pip_proc = subprocess.run(
                     [sys.executable, "-m", "pip", "install", "-r", str(pip_req), "-q", "--no-input"],
                     capture_output=True, text=True, timeout=3600, cwd=str(sandbox),
                 )
-            except (subprocess.TimeoutExpired, Exception):
-                pass
+                if pip_proc.returncode != 0:
+                    logging.getLogger(__name__).warning(
+                        "pip install of LLM-generated requirements failed (rc=%d): %s",
+                        pip_proc.returncode, (pip_proc.stderr or "")[-500:])
+            except Exception as e:
+                logging.getLogger(__name__).warning(
+                    "pip install of LLM-generated requirements raised %s: %s "
+                    "(file: %s)", type(e).__name__, e, pip_req)
 
         # P0-1: Incremental testing — run only affected tests, with periodic full runs
         self._test_call_count += 1
-        incremental_interval = getattr(self._config, 'incremental_test_interval', 3) \
-            if hasattr(self._config, 'incremental_test_interval') else 3
-        # Also check convergence config
         if not hasattr(self, '_incremental_interval'):
             _conv_cfg = getattr(self._config, 'convergence', None)
             self._incremental_interval = getattr(_conv_cfg, 'incremental_test_interval', 3) \
@@ -326,9 +336,9 @@ class TesterAgent(BaseAgent):
                     print(f"[tester] P0-1 incremental: running {len(affected)} affected test files "
                           f"(call #{self._test_call_count})", file=sys.stderr)
                 else:
-                    print(f"[tester] P0-1: no affected tests found, running full suite", file=sys.stderr)
+                    print("[tester] P0-1: no affected tests found, running full suite", file=sys.stderr)
             else:
-                print(f"[tester] P0-1: no changed_files in payload, running full suite", file=sys.stderr)
+                print("[tester] P0-1: no changed_files in payload, running full suite", file=sys.stderr)
         else:
             print(f"[tester] P0-1: periodic full test run (call #{self._test_call_count})", file=sys.stderr)
 

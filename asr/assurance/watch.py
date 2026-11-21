@@ -15,7 +15,7 @@ import asyncio
 import json
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from asr.assurance.compose import GateConfig
@@ -40,17 +40,15 @@ class CycleSummary:
 
 def fetch_and_resolve(board_dir: Path) -> str:
     """git fetch + resolve FETCH_HEAD to a pinned sha. Raises on no remote."""
+    from asr.envs import hermetic_git_env
     proc = subprocess.run(
         ["git", "-C", str(board_dir), "fetch", "origin"],
-        capture_output=True, text=True,
-        env={"GIT_TERMINAL_PROMPT": "0",
-             "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"})
+        capture_output=True, text=True, env=hermetic_git_env())
     if proc.returncode != 0:
         raise RuntimeError(f"git fetch failed: {proc.stderr.strip()[:200]}")
     proc = subprocess.run(
         ["git", "-C", str(board_dir), "rev-parse", "FETCH_HEAD"],
-        capture_output=True, text=True,
-        env={"PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"})
+        capture_output=True, text=True, env=hermetic_git_env())
     if proc.returncode != 0:
         raise RuntimeError(f"rev-parse FETCH_HEAD failed: {proc.stderr.strip()[:200]}")
     return proc.stdout.strip()
@@ -81,7 +79,7 @@ async def run_cycle(cycle: int, board_dir: Path, store: AssessmentStore,
                     rules_ref: str | None = None,
                     workdir: Path | None = None,
                     gate_cfg: GateConfig | None = None) -> CycleSummary:
-    started = datetime.now(timezone.utc).isoformat()
+    started = datetime.now(UTC).isoformat()
     s = CycleSummary(cycle=cycle, started_at=started, board="", rev=rev or "HEAD")
     try:
         if fetch:

@@ -46,16 +46,18 @@ def test_cmd_has_no_removed_flags():
     assert "--continue" not in cmd
 
 
-def test_cmd_uses_auto_by_default():
-    cmd = _build_opencode_cmd(Path("/tmp/proj"))
-    assert "--auto" in cmd
-
-
-def test_cmd_auto_disabled_for_permission_whitelist(monkeypatch):
-    # Per-repo opencode.json permission whitelist mode: no --auto flag.
-    monkeypatch.setenv("ASR_OPENCODE_AUTO", "0")
+def test_cmd_no_auto_by_default():
+    # Safe default: permissions come from the per-repo opencode.json
+    # whitelist, never from blanket auto-approval.
     cmd = _build_opencode_cmd(Path("/tmp/proj"))
     assert "--auto" not in cmd
+
+
+def test_cmd_auto_opt_in(monkeypatch):
+    # ASR_OPENCODE_AUTO=1 explicitly restores auto-approval.
+    monkeypatch.setenv("ASR_OPENCODE_AUTO", "1")
+    cmd = _build_opencode_cmd(Path("/tmp/proj"))
+    assert "--auto" in cmd
 
 
 def test_cmd_session_continuation_without_continue_flag():
@@ -71,6 +73,55 @@ def test_cmd_keeps_json_format():
     cmd = _build_opencode_cmd(Path("/tmp/proj"))
     i = cmd.index("--format")
     assert cmd[i + 1] == "json"
+
+
+def test_opencode_timeout_default_and_env(monkeypatch):
+    from asr.agents import opencode_backend
+    monkeypatch.delenv("ASR_OPENCODE_TIMEOUT", raising=False)
+    assert opencode_backend._opencode_timeout() == 1800
+    monkeypatch.setenv("ASR_OPENCODE_TIMEOUT", "7")
+    assert opencode_backend._opencode_timeout() == 7
+
+
+def test_run_opencode_times_out_and_raises(monkeypatch):
+    # A hung opencode must not hang the runtime: the wall-clock budget
+    # terminates the subprocess and surfaces a RuntimeError.
+    import asyncio
+
+    from asr.agents import opencode_backend
+
+    class _FakeStream:
+        async def readline(self):
+            await asyncio.sleep(999)
+
+        async def read(self):
+            await asyncio.sleep(999)
+
+    class _FakeProc:
+        stdout = _FakeStream()
+        stderr = _FakeStream()
+        returncode = None
+
+        def terminate(self):
+            pass
+
+        def kill(self):
+            pass
+
+        async def wait(self):
+            return 0
+
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc()
+
+    monkeypatch.setenv("ASR_OPENCODE_TIMEOUT", "1")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    async def _call():
+        return await opencode_backend._run_opencode("hi", Path("/tmp/proj"))
+
+    with pytest.raises(RuntimeError, match="timed out"):
+        asyncio.run(_call())
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +300,7 @@ def _make_runtime_stub(state: ConvergenceState):
 
 def _invoke_run(argv: list[str], state: ConvergenceState):
     from click.testing import CliRunner
+
     from asr.cli.main import cli
     runner = CliRunner()
     with patch("asr.cli.main.ASRRuntime") as runtime_cls, \
@@ -269,6 +321,7 @@ def test_run_exit_code_not_converged(tmp_path):
 
 def test_run_exit_code_env_error_when_opencode_missing(tmp_path, monkeypatch):
     from click.testing import CliRunner
+
     from asr.cli.main import cli
     monkeypatch.setenv("PATH", str(tmp_path))  # no opencode anywhere
     runner = CliRunner()

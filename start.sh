@@ -16,6 +16,9 @@ ASR_ROOT=$(cd "$(dirname "$0")" && pwd)
 # ---- 运行参数（ASR_* 为历史环境变量名，保留兼容）----
 export ASR_OPENCODE_TIMEOUT="144000"
 export ASR_VERBOSE="1"
+# 默认不再给 opencode 追加 --auto（权限走项目内 opencode.json 白名单）；
+# 如需旧行为（自动批准未显式拒绝的权限），取消下一行注释：
+# export ASR_OPENCODE_AUTO="1"
 
 cd "$ASR_ROOT"
 

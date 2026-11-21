@@ -4,7 +4,8 @@ from pathlib import Path
 import pytest
 
 from asr.adapters.ousheng.snapshot import (
-    BoardSnapshot, SnapshotError, load_snapshot,
+    SnapshotError,
+    load_snapshot,
 )
 from tests.board_fixture import build_board
 
@@ -91,3 +92,15 @@ def test_human_ack_parsed_and_visible(board: Path):
     d = build_item_dossier(snap, item)
     page = d.pages["tasks/T-105"]
     assert "human_ack" in page and "null" in page  # explicit absence, not hidden
+
+
+def test_resolve_rev_pins_head_to_sha(tmp_path):
+    """Regression (sim-lab S5): --as-of HEAD must be recorded as the sha it
+    pointed at, never the symbolic name."""
+    from asr.adapters.ousheng.snapshot import resolve_rev
+    from tests.board_fixture import build_board
+
+    board = build_board(tmp_path / "b")
+    sha = resolve_rev(board, "HEAD")
+    assert len(sha) == 40 and all(c in "0123456789abcdef" for c in sha)
+    assert resolve_rev(board, sha) == sha  # explicit revs pass through

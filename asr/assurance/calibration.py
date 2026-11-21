@@ -20,8 +20,9 @@ from __future__ import annotations
 import json
 import subprocess
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
 
 # ── Frozen thresholds (P2 freeze; changing these requires a documented decision) ──
 @dataclass(frozen=True)
@@ -31,7 +32,7 @@ class Thresholds:
     precision_min: float = 0.8      # PM-marked precision (ledger)
     precision_min_marks: int = 20   # minimum marks before precision counts
 
-    def check(self, m: "CalibrationMetrics") -> list[dict]:
+    def check(self, m: CalibrationMetrics) -> list[dict]:
         checks = [
             {"criterion": "detection_rate", "value": m.detection_rate(),
              "required": f">= {self.detection_rate}",
@@ -46,7 +47,7 @@ class Thresholds:
         return checks
 
     @staticmethod
-    def precision_check(ledger: "QualityLedger") -> dict:
+    def precision_check(ledger: QualityLedger) -> dict:
         n, p = ledger.precision()
         return {"criterion": "pm_marked_precision", "marks": n, "precision": p,
                 "value": f"{p:.0%} (n={n})" if p is not None else f"n/a (n={n})",
@@ -113,7 +114,7 @@ def evaluate(report: dict, truth: dict) -> CalibrationMetrics:
             (m.inconclusive_ok if ok
              else m.inconclusive_violations).append(f"{cid}:{got_status}")
         else:  # expect list of codes (any-of sets allowed)
-            for i, codes in enumerate(case["expect"] if isinstance(case["expect"][0], list)
+            for _, codes in enumerate(case["expect"] if isinstance(case["expect"][0], list)
                                       else [case["expect"]]):
                 m.injections_total += 1
                 if any(c in got_codes for c in codes):
@@ -135,7 +136,7 @@ class QualityLedger:
             raise ValueError("verdict must be tp|fp")
         entry = {"fingerprint": fingerprint, "verdict": verdict,
                  "marked_by": marked_by, "note": note,
-                 "at": datetime.now(timezone.utc).isoformat()}
+                 "at": datetime.now(UTC).isoformat()}
         with self.path.open("a") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         return entry
@@ -143,7 +144,7 @@ class QualityLedger:
     def entries(self) -> list[dict]:
         if not self.path.exists():
             return []
-        return [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
+        return [json.loads(line) for line in self.path.read_text().splitlines() if line.strip()]
 
     def precision(self) -> tuple[int, float | None]:
         es = self.entries()
@@ -155,10 +156,9 @@ class QualityLedger:
 
 # ── Injection suite builder ──────────────────────────────────────────────────
 def _git(repo: Path, *args: str) -> None:
-    env = {"GIT_AUTHOR_NAME": "calib", "GIT_AUTHOR_EMAIL": "c@c",
-           "GIT_COMMITTER_NAME": "calib", "GIT_COMMITTER_EMAIL": "c@c",
-           "GIT_TERMINAL_PROMPT": "0",
-           "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin"}
+    from asr.envs import hermetic_git_env
+    env = hermetic_git_env({"GIT_AUTHOR_NAME": "calib", "GIT_AUTHOR_EMAIL": "c@c",
+                            "GIT_COMMITTER_NAME": "calib", "GIT_COMMITTER_EMAIL": "c@c"})
     proc = subprocess.run(["git", "-C", str(repo), *args], capture_output=True,
                           text=True, env=env)
     if proc.returncode != 0:

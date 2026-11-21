@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import logging
 
 from asr.agents.base import BaseAgent
 from asr.events.store import EventStore
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRunner:
@@ -51,7 +53,11 @@ class AgentRunner:
             except asyncio.CancelledError:
                 break
             except Exception:
-                pass
+                # Unattended loop: keep polling, but never swallow the failure
+                # silently — a crashing agent must be visible in the logs.
+                logger.exception(
+                    "AgentRunner(%s) poll iteration failed; retrying in %.1fs",
+                    type(self._agent).__name__, self._poll_interval)
 
             await asyncio.sleep(self._poll_interval)
 

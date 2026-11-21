@@ -36,7 +36,7 @@ class OuShengMCPClient:
         self._reader: threading.Thread | None = None
 
     # ── lifecycle ────────────────────────────────────────────────────────
-    def __enter__(self) -> "OuShengMCPClient":
+    def __enter__(self) -> OuShengMCPClient:
         self.start()
         return self
 
