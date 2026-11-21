@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from asr.dag.models import TaskNode, TaskDAG
+
 from asr.config.models import ModelConfig
+from asr.dag.models import TaskDAG, TaskNode
 from asr.spec.models import Specification
 
 

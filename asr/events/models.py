@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -45,13 +45,17 @@ class Event(BaseModel):
     type: EventType
     from_agent: AgentName
     to_agent: AgentName
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
     sequence: int = 1
+    # Payload lives on the base class: every concrete event carries one and
+    # consumers (controller, CLI) access it polymorphically. Subclasses
+    # document their payload keys next to their redeclaration.
+    payload: dict[str, Any] = Field(default_factory=dict)
     # P0-1: Typed event edges — causal graph for observability and traceability
     caused_by: str | None = None        # event_id of the upstream event that triggered this one
     supersedes: str | None = None       # event_id of a prior event this one replaces (temporal supersession)
     decided_by: str | None = None       # event_id of the event that was the basis for a decision
-    validity_from: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    validity_from: datetime = Field(default_factory=lambda: datetime.now(UTC))
     validity_until: datetime | None = None  # None = still valid; set when superseded
 
 

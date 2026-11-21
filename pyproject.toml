@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "asr-runtime"
 version = "3.0.0"
 description = "MoDou (墨斗) Assurance Runtime — independent verification and deviation analysis via Tester/Analyzer; software engineering plugin retained"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 authors = [
     {name = "George Wang", email = "george@senlinpubu.top"},
@@ -16,7 +17,6 @@ keywords = ["ai", "llm", "cybernetics", "code-generation", "convergence", "openc
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -30,14 +30,28 @@ dependencies = [
     "click>=8",
 ]
 
+[project.urls]
+Homepage = "https://github.com/georgewangchn/MoDou"
+Repository = "https://github.com/georgewangchn/MoDou"
+Issues = "https://github.com/georgewangchn/MoDou/issues"
+Changelog = "https://github.com/georgewangchn/MoDou/blob/main/CHANGELOG.md"
+Demo = "https://georgewangchn.github.io/MoDou/"
+
+[project.scripts]
+asr = "asr.cli.main:cli"
+
 [project.optional-dependencies]
 test = [
     "pytest>=9",
     "pytest-asyncio>=1",
 ]
-
-[project.scripts]
-asr = "asr.cli.main:cli"
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "build>=1.2",
+]
 
 [tool.setuptools.packages.find]
 include = ["asr*"]
@@ -45,3 +59,30 @@ include = ["asr*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+extend-exclude = ["video", ".venv", ".venv-video", "demo_dev"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# E501: long Chinese-comment lines; revisit once i18n lands.
+# UP042: StrEnum changes str()/format semantics of enums that are serialized
+#        into events and JSON reports — migration needs its own review.
+ignore = ["E501", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests tolerate ambiguous comprehension names and assign-without-read
+# (structure documentation); production code is held to the full ruleset.
+"tests/*" = ["E741", "F841"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+# asr uses implicit namespace packages (no __init__.py at several levels)
+explicit_package_bases = true
+exclude = ["video/", "demo_dev/"]

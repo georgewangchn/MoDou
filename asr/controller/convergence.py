@@ -7,37 +7,32 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 
+from asr.agents.base import BaseAgent
 from asr.config.models import ASRConfig
 from asr.events.models import (
+    AgentName,
+    AnalyzeRequestedEvent,
+    ConvergedEvent,
+    ConvergenceIterationEvent,
+    ConvergenceMetrics,
+    ConvergenceMetricsEvent,
+    ErrorOccurredEvent,
     Event,
     EventType,
-    AgentName,
-    TestStartedEvent,
-    TestFailedEvent,
-    TestPassedEvent,
-    TestErrorEvent,
-    SpecDiffFoundEvent,
-    SpecAlignedEvent,
-    PatchRequestedEvent,
-    PatchGeneratedEvent,
+    HandoffContext,
     PatchAppliedEvent,
     PatchFailedEvent,
-    AnalyzeRequestedEvent,
-    AnalyzerFeedbackEvent,
-    ConvergedEvent,
+    PatchGeneratedEvent,
+    PatchRequestedEvent,
     StuckEvent,
-    ErrorOccurredEvent,
-    ConvergenceIterationEvent,
-    ConvergenceMetricsEvent,
-    ConvergenceMetrics,
-    HandoffContext,
+    TestErrorEvent,
+    TestStartedEvent,
 )
 from asr.events.store import EventStore
-from asr.spec.models import Specification
-from asr.agents.base import BaseAgent
-from asr.patch.diff import PatchEntry
 from asr.logger import ASRLogger
 from asr.memory.domain import DomainMemory
+from asr.patch.diff import PatchEntry
+from asr.spec.models import Specification
 
 
 class ConvergenceState(str, Enum):
@@ -114,6 +109,12 @@ class ASRController:
         self._domain_memory: DomainMemory | None = None
         self._init_domain_memory()
 
+    def _log(self, level: str, message: str, source: str = "controller") -> None:
+        """Log via the injected logger; a None logger means no logging is wired
+        (tests, library embedding) — skip instead of crashing on None.log."""
+        if self._logger is not None:
+            self._logger.log(level, message, source)
+
     def _init_domain_memory(self) -> None:
         """P2-1: Initialize domain memory for persistent cross-task knowledge."""
         memory_dir = self._project_dir / self._config.runtime.state_dir / "memory"
@@ -150,14 +151,14 @@ class ASRController:
         metrics_path = state_dir / f"metrics_{task_id}.json"
         with open(metrics_path, 'w') as f:
             json.dump(timeline, f, indent=2, ensure_ascii=False)
-        self._logger.log("INFO", f"P2-2: metrics timeline saved to {metrics_path}", "controller")
+        self._log("INFO", f"P2-2: metrics timeline saved to {metrics_path}", "controller")
 
         # P2-2: Build and save HTML observability dashboard
         dashboard_html = self._build_observability_dashboard(task_id, timeline, result)
         dashboard_path = state_dir / f"dashboard_{task_id}.html"
         with open(dashboard_path, 'w') as f:
             f.write(dashboard_html)
-        self._logger.log("INFO", f"P2-2: observability dashboard saved to {dashboard_path}", "controller")
+        self._log("INFO", f"P2-2: observability dashboard saved to {dashboard_path}", "controller")
 
     def _build_observability_dashboard(self, task_id: str, timeline: list[dict],
                                         result: ConvergenceResult) -> str:
@@ -181,20 +182,13 @@ class ASRController:
         for mode, it in self._mode_history:
             mode_transitions.append({"iteration": it, "mode": mode})
 
-        # Build patch lineage summary
-        lineage = self._patch_lineage if self._patch_lineage else []
-
         # Build failure fingerprint history
         fingerprint_history = [
             {"iteration": i + 1, "fingerprint": fp}
             for i, fp in enumerate(self._failure_fingerprints)
         ]
 
-        timeline_json = _json.dumps(timeline, ensure_ascii=False)
         events_json = _json.dumps(event_summary, ensure_ascii=False)
-        modes_json = _json.dumps(mode_transitions, ensure_ascii=False)
-        lineage_json = _json.dumps(lineage, ensure_ascii=False)
-        fingerprints_json = _json.dumps(fingerprint_history, ensure_ascii=False)
         final_state = result.state.value
         total_iterations = result.iterations
         total_events = len(result.events)
@@ -356,7 +350,6 @@ class ASRController:
 
         prev_failures: list[dict] = []
         prev_feedback: list[str] = []
-        before_count = 0
         prev_test_count = 0
 
         while iteration < self._config.convergence.max_iterations:
@@ -401,7 +394,6 @@ class ASRController:
 
             current_test_count = sum(e.payload.get("total", 0) for e in test_events if hasattr(e, 'payload'))
             if current_test_count != prev_test_count:
-                before_count = after_count
                 prev_test_count = current_test_count
 
             if progress_callback:
@@ -423,7 +415,6 @@ class ASRController:
             # Save a copy for REGRESSION_RECOVERY mode (next iteration may need to rollback)
             self._prev_rollback_entries = list(self._rollback_entries)
             self._rollback_entries.clear()
-            before_count = after_count
 
             if test_error:
                 test_failed = True
@@ -467,7 +458,7 @@ class ASRController:
                 # Tests pass but analyzer didn't run (no SPEC_ALIGNED).
                 # Force analyzer next round before declaring convergence.
                 self._repair_mode = "FINAL_VERIFICATION"
-                self._logger.log(
+                self._log(
                     "INFO",
                     f"RepairMode → FINAL_VERIFICATION: tests pass but needs analyzer confirmation "
                     f"(iter={iteration})",
@@ -487,7 +478,7 @@ class ASRController:
                     for e in analysis_events
                 )
                 self._repair_mode = "SPEC_COMPLETION" if has_missing else "TEST_FIX"
-                self._logger.log(
+                self._log(
                     "INFO",
                     f"RepairMode: FINAL_VERIFICATION → {self._repair_mode} "
                     f"(Analyzer found issues, tests pass but spec not aligned)",
@@ -535,9 +526,10 @@ class ASRController:
                     self._no_improvement_streak = 0
             circuit_threshold = getattr(cfg, 'circuit_breaker_stagnant_iters', 6)
             if self._no_improvement_streak >= circuit_threshold:
-                self._logger.log("WARN", f"Circuit breaker: no improvement in {self._no_improvement_streak} iters", "controller")
+                self._log("WARN", f"Circuit breaker: no improvement in {self._no_improvement_streak} iters", "controller")
                 # Save state for human review
-                import json, time as _time
+                import json
+                import time as _time
                 state_dir = self._project_dir / self._config.runtime.state_dir
                 state_dir.mkdir(parents=True, exist_ok=True)
                 snapshot = {
@@ -556,7 +548,7 @@ class ASRController:
                 snap_path = state_dir / f"stuck_{task_id or 'unknown'}_{iteration}.json"
                 with open(snap_path, 'w') as sf:
                     json.dump(snapshot, sf, indent=2, ensure_ascii=False)
-                self._logger.log("INFO", f"Human-in-the-loop: state saved to {snap_path}", "controller")
+                self._log("INFO", f"Human-in-the-loop: state saved to {snap_path}", "controller")
                 self._emit_stuck(task_id, iteration, "circuit_breaker_no_improvement", test_events, result)
                 self._finalize_metrics_timeline(task_id, result)
                 return result
@@ -571,14 +563,14 @@ class ASRController:
                     and metrics.test_pass_rate < self._best_snapshot["test_pass_rate"] - 0.15
                     and self._best_snapshot.get("files")
                     and iteration > 1):
-                self._logger.log(
+                self._log(
                     "WARN",
                     f"P2-1 A/B baseline: pass_rate {metrics.test_pass_rate:.1%} << "
                     f"best {self._best_snapshot['test_pass_rate']:.1%} — rolling back to best",
                     "controller"
                 )
                 restored = self._restore_project_files(self._best_snapshot["files"])
-                self._logger.log(
+                self._log(
                     "INFO",
                     f"P2-1: restored {restored} files to best snapshot (iter {self._best_snapshot['iteration']})",
                     "controller"
@@ -909,7 +901,7 @@ class ASRController:
             if memory_text:
                 # Extract only the most recent 5 entries to keep context bounded
                 lines = memory_text.split("\n")
-                entry_lines = [l for l in lines if l.strip().startswith("- [")]
+                entry_lines = [line for line in lines if line.strip().startswith("- [")]
                 if entry_lines:
                     recent = entry_lines[-5:]
                     parts.append(f"[DOMAIN_MEMORY] 项目记忆（最近{len(recent)}条）:\n" + "\n".join(recent))
@@ -1026,14 +1018,15 @@ class ASRController:
             if self._regressing_streak >= 2:
                 restored = 0
                 source_files = None
-                if getattr(self, '_best_snapshot', None):
+                best = getattr(self, '_best_snapshot', None)
+                if best:
                     # Use best snapshot: restore actual project file state from best iteration
-                    source_files = self._best_snapshot.get("files")
-                    self._logger.log(
+                    source_files = best.get("files")
+                    self._log(
                         "INFO",
                         f"REGRESSION_RECOVERY: rolling back to best snapshot "
-                        f"(iter {self._best_snapshot['iteration']}, "
-                        f"pass_rate={self._best_snapshot['test_pass_rate']:.2f})",
+                        f"(iter {best['iteration']}, "
+                        f"pass_rate={best['test_pass_rate']:.2f})",
                         "controller"
                     )
                 if source_files is None and getattr(self, '_prev_rollback_entries', None):
@@ -1041,26 +1034,26 @@ class ASRController:
                     source_files = {}
                     for entry in self._prev_rollback_entries:
                         source_files[entry.file_path] = entry.original_content
-                    self._logger.log(
+                    self._log(
                         "INFO",
                         "REGRESSION_RECOVERY: rolling back to pre-patch state",
                         "controller"
                     )
                 if source_files:
                     restored = self._restore_project_files(source_files)
-                    self._logger.log(
+                    self._log(
                         "INFO",
                         f"REGRESSION_RECOVERY: restored {restored} files",
                         "controller"
                     )
                 else:
-                    self._logger.log(
+                    self._log(
                         "WARN",
                         "REGRESSION_RECOVERY: no rollback snapshot available",
                         "controller"
                     )
             else:
-                self._logger.log(
+                self._log(
                     "INFO",
                     f"REGRESSION_RECOVERY: regressing_streak={self._regressing_streak}, "
                     f"not rolling back — letting Builder try again on current state",
@@ -1086,7 +1079,7 @@ class ASRController:
             # entirely to save tokens and time. The purpose of this mode is to
             # force the Analyzer to run, not to modify code.
             if self._repair_mode == "FINAL_VERIFICATION":
-                self._logger.log(
+                self._log(
                     "INFO",
                     "FINAL_VERIFICATION: skipping Builder call (no code changes needed)",
                     "controller"
@@ -1191,7 +1184,7 @@ class ASRController:
             result_events = await self._invoke_agent(self._builder, patch_request, task_id, "repairing")
             for evt in result_events:
                 events.append(evt)
-                if evt.type == EventType.PATCH_GENERATED:
+                if evt.type == EventType.PATCH_GENERATED and isinstance(evt, PatchGeneratedEvent):
                     self._patch_history.append(evt)
 
             snapshotted = {e.file_path: e.original_content for e in self._rollback_entries}
@@ -1347,7 +1340,6 @@ class ASRController:
                 # "class Foo: pass", "compass", "bypass". Use AST-level detection
                 # instead of raw substring matching.
                 if summary.get("bypass_detected", False):
-                    import ast as _ast_guard
                     for diff_line in diff_text.split("\n"):
                         if not diff_line.startswith("+"):
                             continue
@@ -1359,12 +1351,12 @@ class ASRController:
                         # 1. bare "except:" (no exception type)
                         if stripped.startswith("except:") or stripped.startswith("except :"):
                             guard_violations.append(
-                                f"[GUARD:BYPASS] bare except: silences all errors"
+                                "[GUARD:BYPASS] bare except: silences all errors"
                             )
                         # 2. "return expected" hardcoded return
                         if "return expected" in stripped.lower():
                             guard_violations.append(
-                                f"[GUARD:BYPASS] hardcoded 'return expected' detected"
+                                "[GUARD:BYPASS] hardcoded 'return expected' detected"
                             )
                         # 3. mock( in non-test files — check the diff context
                         # FIX (P2): was checking "test_" not in str(self._project_dir)
@@ -1388,18 +1380,18 @@ class ASRController:
                         # 4. @pytest.mark.skip
                         if "@pytest.mark.skip" in stripped:
                             guard_violations.append(
-                                f"[GUARD:BYPASS] test skipped instead of fixed"
+                                "[GUARD:BYPASS] test skipped instead of fixed"
                             )
 
                 if guard_violations:
                     for v in guard_violations:
-                        self._logger.log("WARN", v, "controller")
+                        self._log("WARN", v, "controller")
                     reject_evt = PatchFailedEvent(
                         task_id=task_id, from_agent=AgentName.CONTROLLER,
                         to_agent=AgentName.BUILDER,
                         payload={
                             "file_path": "*",
-                            "error": f"[PATCH_GUARD_VIOLATION] " + "; ".join(guard_violations[:3]),
+                            "error": "[PATCH_GUARD_VIOLATION] " + "; ".join(guard_violations[:3]),
                             "failed_hunk": None,
                         },
                     )
@@ -1408,7 +1400,7 @@ class ASRController:
                     # #3 fix: record rejection so next Builder call sees it
                     self._last_patch_rejection = (
                         self._current_iteration,
-                        f"[PATCH_GUARD_VIOLATION] " + "; ".join(guard_violations[:3])
+                        "[PATCH_GUARD_VIOLATION] " + "; ".join(guard_violations[:3])
                     )
                     # Roll back
                     for entry in self._rollback_entries:
@@ -1475,7 +1467,7 @@ class ASRController:
                 agent.process(event),
                 timeout=timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return [ErrorOccurredEvent(
                 task_id=task_id, from_agent=agent.name,
                 to_agent=AgentName.CONTROLLER,
@@ -1534,7 +1526,7 @@ class ASRController:
     def _compute_metrics(self, iteration: int,
                           test_events: list, analysis_events: list,
                           repair_events: list,
-                          prev_failures: list) -> "ConvergenceMetrics":
+                          prev_failures: list) -> ConvergenceMetrics:
         """Compute explicit error signals for this iteration.
 
         First-principles:
@@ -1597,8 +1589,8 @@ class ASRController:
         repeated_failure_count = 0
         if len(self._failure_fingerprints) >= 2 and current_fp != "none":
             # Count how many of the last 3 rounds had the same fingerprint
-            recent = self._failure_fingerprints[-4:-1]  # exclude current
-            repeated_failure_count = sum(1 for fp in recent if fp == current_fp)
+            recent_fps = self._failure_fingerprints[-4:-1]  # exclude current
+            repeated_failure_count = sum(1 for fp in recent_fps if fp == current_fp)
 
         # ── Oscillation score ──
         # Primary: test_pass_rate history (does it go up-down-up?)
@@ -1670,7 +1662,7 @@ class ASRController:
             test_pass_rate, missing_feature_count, analysis_aligned
         )
         if sensor_disagreement != "AGREED":
-            self._logger.log(
+            self._log(
                 "WARN",
                 f"Sensor disagreement: {sensor_disagreement} "
                 f"(pass_rate={test_pass_rate:.1%}, missing={missing_feature_count}, "
@@ -1717,7 +1709,7 @@ class ASRController:
                 "test_pass_rate": test_pass_rate,
                 "files": self._snapshot_project_files(),
             }
-            self._logger.log(
+            self._log(
                 "INFO",
                 f"Best snapshot saved: iter={iteration}, pass_rate={test_pass_rate:.2f}",
                 "controller"
@@ -1725,8 +1717,8 @@ class ASRController:
 
         return metrics
 
-    def _emit_metrics(self, task_id: str, metrics: "ConvergenceMetrics",
-                      result: "ConvergenceResult") -> None:
+    def _emit_metrics(self, task_id: str, metrics: ConvergenceMetrics,
+                      result: ConvergenceResult) -> None:
         """Emit ConvergenceMetricsEvent and update progress callback."""
         evt = ConvergenceMetricsEvent(
             task_id=task_id,
@@ -1816,8 +1808,8 @@ class ASRController:
         return restored
 
 
-    def _check_and_switch_mode(self, metrics: "ConvergenceMetrics",
-                                task_id: str, result: "ConvergenceResult") -> str:
+    def _check_and_switch_mode(self, metrics: ConvergenceMetrics,
+                                task_id: str, result: ConvergenceResult) -> str:
         """Decide whether to switch RepairMode, with hysteresis to prevent flapping."""
         # #6 fix: update trend history and streaks for hysteresis
         self._trend_history.append(metrics.trend)
@@ -1844,7 +1836,7 @@ class ASRController:
         # P3 fix: exit OSCILLATION_BREAK when improving for 2+ iters
         if self._repair_mode == "OSCILLATION_BREAK" and self._improving_streak >= 2:
             new_mode = "TEST_FIX"
-            self._logger.log(
+            self._log(
                 "INFO",
                 f"RepairMode: OSCILLATION_BREAK → TEST_FIX "
                 f"(improving_streak={self._improving_streak}, oscillation resolved)",
@@ -1857,7 +1849,7 @@ class ASRController:
         # it continue without further rollback interference.
         elif self._repair_mode == "REGRESSION_RECOVERY" and self._improving_streak >= 1:
             new_mode = "TEST_FIX"
-            self._logger.log(
+            self._log(
                 "INFO",
                 f"RepairMode: REGRESSION_RECOVERY → TEST_FIX "
                 f"(improving_streak={self._improving_streak}, regression recovered)",
@@ -1898,7 +1890,7 @@ class ASRController:
 
         # Apply mode change
         if new_mode != self._repair_mode:
-            self._logger.log(
+            self._log(
                 "INFO",
                 f"RepairMode: {self._repair_mode} → {new_mode} "
                 f"(trend={metrics.trend}, pass_rate={metrics.test_pass_rate:.2f}, "
@@ -1972,9 +1964,9 @@ def _compute_diff_summary(diff_text: str) -> dict:
     if not diff_text:
         return {"files": 0, "added": 0, "removed": 0, "bypass_detected": False, "risk_score": 0}
     lines = diff_text.split("\n")
-    added = sum(1 for l in lines if l.startswith("+") and not l.startswith("+++"))
-    removed = sum(1 for l in lines if l.startswith("-") and not l.startswith("---"))
-    files_touched = max(1, len([l for l in lines if l.startswith("--- a/") or l.startswith("+++ b/")]))
+    added = sum(1 for line in lines if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in lines if line.startswith("-") and not line.startswith("---"))
+    files_touched = max(1, len([line for line in lines if line.startswith("--- a/") or line.startswith("+++ b/")]))
     bypass_detected = any(p in diff_text for p in [
         "except:", "if DEBUG:", "return expected",
         "mock(", "@pytest.mark.skip",

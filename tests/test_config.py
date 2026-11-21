@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from asr.config.models import ModelConfig, AgentConfig, ConvergenceConfig, RuntimeConfig, ASRConfig
+from asr.config.models import AgentConfig, ASRConfig, ConvergenceConfig, ModelConfig, RuntimeConfig
 
 
 def test_model_config_defaults():

@@ -10,30 +10,21 @@ Tests cover:
 """
 from __future__ import annotations
 
-import asyncio
 import json
-import os
 import sys
-import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 # Ensure asr package is importable
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from asr.config.models import ASRConfig, ConvergenceConfig, AgentConfig, ModelConfig
-from asr.controller.convergence import ASRController, ConvergenceState, ConvergenceResult
+from asr.agents.tester import TesterAgent
+from asr.config.models import AgentConfig, ASRConfig, ModelConfig
+from asr.controller.convergence import ASRController, ConvergenceResult, ConvergenceState
 from asr.events.models import (
-    Event, EventType, AgentName,
-    TestFailedEvent, TestPassedEvent, TestErrorEvent,
     ConvergenceMetrics,
 )
 from asr.events.store import EventStore
-from asr.agents.tester import TesterAgent
-from asr.spec.models import Specification
-
 
 # ──────────────────────────────────────────────────────────────
 # P0-1: Incremental test computation

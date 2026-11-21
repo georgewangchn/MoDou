@@ -1,5 +1,4 @@
 """Tests for ASR patch diff models."""
-import pytest
 
 from asr.patch.diff import PatchEntry
 

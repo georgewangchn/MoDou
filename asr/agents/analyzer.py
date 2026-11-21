@@ -10,8 +10,13 @@ from asr.agents.llm_tracker import log_token_usage
 from asr.agents.opencode_backend import opencode_completion
 from asr.config.models import AgentConfig
 from asr.events.models import (
-    Event, EventType, AgentName,
-    SpecDiffFoundEvent, SpecAlignedEvent, AnalyzerFeedbackEvent, ErrorOccurredEvent,
+    AgentName,
+    AnalyzerFeedbackEvent,
+    ErrorOccurredEvent,
+    Event,
+    EventType,
+    SpecAlignedEvent,
+    SpecDiffFoundEvent,
 )
 from asr.events.store import EventStore
 
@@ -76,33 +81,33 @@ def _split_findings(text: str) -> list[str]:
     numbered_pattern = re.compile(r'^\s*[\d]+[\.\)、]\s')
     bullet_pattern = re.compile(r'^\s*[-*•]\s')
 
-    if any(numbered_pattern.match(l) for l in lines) or any(bullet_pattern.match(l) for l in lines):
-        findings: list[str] = []
-        current: list[str] = []
+    if any(numbered_pattern.match(line) for line in lines) or any(bullet_pattern.match(line) for line in lines):
+        blocks: list[str] = []
+        cur_block: list[str] = []
         for line in lines:
             if numbered_pattern.match(line) or bullet_pattern.match(line):
-                if current:
-                    findings.append("\n".join(current).strip())
-                current = [line]
+                if cur_block:
+                    blocks.append("\n".join(cur_block).strip())
+                cur_block = [line]
             else:
-                current.append(line)
-        if current:
-            findings.append("\n".join(current).strip())
-        return [f for f in findings if f]
+                cur_block.append(line)
+        if cur_block:
+            blocks.append("\n".join(cur_block).strip())
+        return [f for f in blocks if f]
 
     # Strategy 4: Split by category section headers
     section_pattern = re.compile(r'^(?:[#]+\s*)?(?:缺失功能|逻辑错误|违反约束|推演偏差|问题|分析)', re.IGNORECASE)
     sections: list[str] = []
-    current: list[str] = []
+    cur_section: list[str] = []
     for line in lines:
         if section_pattern.match(line.strip()):
-            if current:
-                sections.append("\n".join(current).strip())
-            current = [line]
+            if cur_section:
+                sections.append("\n".join(cur_section).strip())
+            cur_section = [line]
         else:
-            current.append(line)
-    if current:
-        sections.append("\n".join(current).strip())
+            cur_section.append(line)
+    if cur_section:
+        sections.append("\n".join(cur_section).strip())
     if len(sections) > 1:
         return [s for s in sections if s]
 
@@ -152,10 +157,6 @@ class AnalyzerAgent(BaseAgent):
         missing_features, logic_issues, constraint_violations = _classify_findings(findings)
         # Build structured summary for Controller
         blocking_findings = [sf.message for sf in report.structured_findings if sf.blocking]
-        high_confidence_findings = [
-            sf.message for sf in report.structured_findings
-            if sf.severity in ("HIGH", "CRITICAL") and sf.confidence >= 0.7
-        ]
 
         return [
             SpecDiffFoundEvent(
@@ -340,7 +341,7 @@ class AnalyzerAgent(BaseAgent):
 
 
 
-def _parse_structured_finding(line: str) -> "StructuredFinding | None":
+def _parse_structured_finding(line: str) -> StructuredFinding | None:
     """Parse a single structured finding line."""
     import re
     m = re.match(

@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
+from asr.agents.analyzer import AnalyzerAgent
+from asr.agents.builder import BuilderAgent
+from asr.agents.runner import AgentOrchestrator, AgentRunner
+from asr.agents.tester import TesterAgent
 from asr.config.models import ASRConfig, ModelConfig
 from asr.controller.convergence import ASRController, ConvergenceResult, ConvergenceState
-from asr.events.store import EventStore
-from asr.agents.builder import BuilderAgent
-from asr.agents.tester import TesterAgent
-from asr.agents.analyzer import AnalyzerAgent
-from asr.agents.runner import AgentRunner, AgentOrchestrator
 from asr.dag.decomposer import TaskDecomposer
 from asr.dag.executor import DAGExecutor
+from asr.events.store import EventStore
 from asr.logger import ASRLogger
 from asr.spec.models import Specification
-import yaml
 
 
 class ASRRuntime:
@@ -53,7 +54,6 @@ class ASRRuntime:
         tester = self._create_tester(project_dir)
         analyzer = self._create_analyzer(project_dir)
         dag = await TaskDecomposer(self._agent_model()).decompose(spec, project_dir, "dag-0")
-        from asr.dag.models import DAGResult
         return await DAGExecutor(
             config=self._config, event_store=self._event_store,
             project_dir=project_dir, builder=builder, tester=tester,
@@ -104,7 +104,6 @@ class ASRRuntime:
 
     async def _run_dag(self, project_dir, spec, builder, tester, analyzer, decomposer):
         dag = await decomposer(self._agent_model())
-        from asr.dag.models import DAGResult
         dag_result = await DAGExecutor(
             config=self._config, event_store=self._event_store,
             project_dir=project_dir, builder=builder, tester=tester,

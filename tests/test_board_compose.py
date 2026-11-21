@@ -1,9 +1,14 @@
 """Tests for aggregation semantics + gates (Final-1.0 §5.4 table, §6.2)."""
-import pytest
 
 from asr.assurance.compose import (
-    AssessorVerdict, Finding, GateConfig, apply_gates, compose_assessment,
-    compose_assurance, compose_status, make_fingerprint,
+    AssessorVerdict,
+    Finding,
+    GateConfig,
+    apply_gates,
+    compose_assessment,
+    compose_assurance,
+    compose_status,
+    make_fingerprint,
 )
 
 PAGES = {"tasks/T-101", "baseline/layered/design.md", "evidence/T-101/1",

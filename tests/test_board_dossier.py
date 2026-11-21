@@ -1,11 +1,11 @@
 """Tests for dossier assembly (Final-1.0 §5.2)."""
-from pathlib import Path
 
 import pytest
 
 from asr.adapters.ousheng.snapshot import load_snapshot
 from asr.assurance.dossier import (
-    build_design_dossier, build_item_dossier,
+    build_design_dossier,
+    build_item_dossier,
 )
 from tests.board_fixture import build_board
 

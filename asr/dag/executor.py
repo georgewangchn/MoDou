@@ -3,12 +3,12 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from asr.agents.base import BaseAgent
 from asr.config.models import ASRConfig
 from asr.controller.convergence import ASRController, ConvergenceState
+from asr.dag.models import DAGResult, NodeStatus, TaskDAG, TaskNode
 from asr.events.store import EventStore
-from asr.dag.models import TaskNode, TaskDAG, DAGResult, NodeStatus
 from asr.spec.models import Specification
-from asr.agents.base import BaseAgent
 
 
 class DAGExecutor:

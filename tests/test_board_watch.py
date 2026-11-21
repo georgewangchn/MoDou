@@ -1,7 +1,6 @@
 """P4 watch/trend tests: cycle isolation, recurrence detection, aggregation."""
 import asyncio
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

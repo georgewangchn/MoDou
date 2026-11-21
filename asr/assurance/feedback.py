@@ -12,8 +12,8 @@ Discipline (Final-1.0 §6.3 / §8):
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 SEV_RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -103,7 +103,7 @@ class CorrectionsLedger:
                  "board": board, "assessment_id": correction.assessment_id,
                  "subject": correction.subject, "code": correction.code,
                  "error": error,
-                 "at": datetime.now(timezone.utc).isoformat()}
+                 "at": datetime.now(UTC).isoformat()}
         with self.path.open("a") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         return entry
@@ -111,7 +111,7 @@ class CorrectionsLedger:
     def entries(self) -> list[dict]:
         if not self.path.exists():
             return []
-        return [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
+        return [json.loads(line) for line in self.path.read_text().splitlines() if line.strip()]
 
     def open_fingerprints(self) -> set[str]:
         return {e["fingerprint"] for e in self.entries() if e["state"] == "OPEN"}
@@ -129,8 +129,8 @@ def false_positive_fingerprints(ledger_path: Path | str) -> set[str]:
     p = Path(ledger_path)
     if not p.exists():
         return set()
-    return {json.loads(l)["fingerprint"] for l in p.read_text().splitlines()
-            if l.strip() and json.loads(l).get("verdict") == "fp"}
+    return {json.loads(line)["fingerprint"] for line in p.read_text().splitlines()
+            if line.strip() and json.loads(line).get("verdict") == "fp"}
 
 
 def subject_systems_from_snapshot(snapshot) -> dict[str, str]:

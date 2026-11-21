@@ -2,18 +2,32 @@
 
 import json
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
 
 import pytest
 
 from asr.events.models import (
-    EventType, AgentName,
-    Event, TaskCreatedEvent, CodeGeneratedEvent, TestStartedEvent,
-    TestFailedEvent, TestPassedEvent, TestErrorEvent, SpecDiffFoundEvent,
-    SpecAlignedEvent, PatchGeneratedEvent, PatchAppliedEvent, PatchFailedEvent,
-    PatchRolledBackEvent, AnalyzerFeedbackEvent, ConvergenceIterationEvent,
-    ConvergedEvent, StuckEvent, ErrorOccurredEvent,
+    AgentName,
+    AnalyzerFeedbackEvent,
+    CodeGeneratedEvent,
+    ConvergedEvent,
+    ConvergenceIterationEvent,
+    ErrorOccurredEvent,
+    Event,
+    EventType,
+    PatchAppliedEvent,
+    PatchFailedEvent,
+    PatchGeneratedEvent,
+    PatchRolledBackEvent,
+    SpecAlignedEvent,
+    SpecDiffFoundEvent,
+    StuckEvent,
+    TaskCreatedEvent,
+    TestErrorEvent,
+    TestFailedEvent,
+    TestPassedEvent,
+    TestStartedEvent,
     event_from_dict,
 )
 from asr.events.store import EventStore
@@ -57,7 +71,7 @@ def test_event_defaults():
 
 def test_event_custom_fields():
     """Test Event with custom event_id and timestamp."""
-    custom_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    custom_time = datetime(2024, 1, 1, 12, 0, 0, tzinfo=UTC)
     event = Event(
         event_id="custom-id-123",
         task_id="task-123",
@@ -310,7 +324,7 @@ def test_error_occurred_event():
 
 def test_convergence_metrics_event():
     """Test ConvergenceMetricsEvent."""
-    from asr.events.models import ConvergenceMetricsEvent, ConvergenceMetrics
+    from asr.events.models import ConvergenceMetrics, ConvergenceMetricsEvent
     metrics = ConvergenceMetrics(iteration=1, test_pass_rate=0.5, trend="improving")
     event = ConvergenceMetricsEvent(
         task_id="task-123",

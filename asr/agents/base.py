@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from asr.events.models import Event, AgentName
+from asr.events.models import AgentName, Event
 from asr.events.store import EventStore
 
 

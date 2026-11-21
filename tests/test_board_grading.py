@@ -1,5 +1,4 @@
 """Tests for tiering router (Final-1.0 §4)."""
-from pathlib import Path
 
 import pytest
 

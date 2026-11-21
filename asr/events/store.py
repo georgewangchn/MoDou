@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from filelock import FileLock
 
-from asr.events.models import Event, EventType, AgentName, event_from_dict
+from asr.events.models import AgentName, Event, EventType, event_from_dict
 
 
 class EventStore:
@@ -86,7 +86,7 @@ class EventStore:
         """
         chain: list[Event] = []
         visited: set[str] = set()
-        current_id = event_id
+        current_id: str | None = event_id
         while current_id and current_id not in visited:
             visited.add(current_id)
             try:
@@ -105,9 +105,9 @@ class EventStore:
         """
         task_events = self.get_task_events(self.read_event(event_id).task_id)
         chain: list[Event] = []
-        current_id = event_id
+        current_id: str | None = event_id
         while current_id:
-            next_supersede = None
+            next_supersede: str | None = None
             for evt in task_events:
                 if evt.supersedes == current_id:
                     chain.append(evt)
@@ -130,7 +130,7 @@ class EventStore:
         if not event_path.exists():
             return
         data = json.loads(event_path.read_text())
-        data["validity_until"] = datetime.now(timezone.utc).isoformat()
+        data["validity_until"] = datetime.now(UTC).isoformat()
         event_path.write_text(json.dumps(data, indent=2, default=str))
 
     def save_patch(self, task_id: str, diff_text: str, file_path: str) -> str:

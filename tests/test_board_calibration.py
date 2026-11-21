@@ -7,7 +7,10 @@ import pytest
 from click.testing import CliRunner
 
 from asr.assurance.calibration import (
-    QualityLedger, Thresholds, build_calibration_suite, evaluate,
+    QualityLedger,
+    Thresholds,
+    build_calibration_suite,
+    evaluate,
 )
 from asr.cli.main import cli
 
@@ -158,9 +161,10 @@ def test_calibrate_cli_with_fake_assessor(suite, tmp_path):
 
 
 def test_mark_cli(tmp_path, suite):
+    import asyncio
+
     from asr.assurance.pipeline import run_board_assessment
     from asr.assurance.store import AssessmentStore
-    import asyncio
 
     store_dir = tmp_path / "store"
     store = AssessmentStore(store_dir)

@@ -1,9 +1,7 @@
 """Tests for ASR specification models."""
 
-import pytest
-from pydantic import ValidationError
 
-from asr.spec.models import Constraint, AcceptanceCriteria, Feature, ValidationResult, Specification
+from asr.spec.models import AcceptanceCriteria, Constraint, Feature, Specification, ValidationResult
 
 
 def test_constraint_defaults():

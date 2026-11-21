@@ -197,8 +197,8 @@ class TestLogTokenUsage:
 
     def test_log_token_usage_exception_handling(self, temp_log_dir):
         """Test that exceptions in logging are suppressed."""
-        with patch("builtins.open", side_effect=IOError("Mock error")):
-            with patch("pathlib.Path.mkdir", side_effect=IOError("Mock error")):
+        with patch("builtins.open", side_effect=OSError("Mock error")):
+            with patch("pathlib.Path.mkdir", side_effect=OSError("Mock error")):
                 usage = {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}
 
                 log_token_usage("builder", "gpt-4o", usage, temp_log_dir)

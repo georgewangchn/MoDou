@@ -67,7 +67,7 @@ def grade_board(snapshot: BoardSnapshot, sample_rate: float = 0.0,
     if sample_rate > 0:
         t1 = res.of(T1)
         if sampler is not None:
-            picks = [i for i, keep in zip(t1, sampler(len(t1))) if keep]
+            picks = [i for i, keep in zip(t1, sampler(len(t1)), strict=False) if keep]
         else:
             import random
             picks = random.sample(t1, k=round(len(t1) * sample_rate)) if t1 else []

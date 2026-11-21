@@ -1,11 +1,10 @@
 """Tests for the LLM assessor harness (protocol, parser, degradation)."""
 from pathlib import Path
-
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from asr.assurance.assessor import assess_dossier, build_prompt, parse_assessor_output
-from asr.assurance.compose import DEVIATION_CODES
 
 GOOD_ITEM = """[EVIDENCE_GAP][HIGH][0.9] subject: T-105 | expected: done 任务应有证据 | actual: evidence 列表为空 | evidence: tasks/T-105 | recommendation: 补充交付证据
 VERDICT:
@@ -77,10 +76,11 @@ def test_parse_invalid_enum_coerced():
 
 
 def test_prompt_fences_dossier_and_protocol():
+    import tempfile
+
     from asr.adapters.ousheng.snapshot import load_snapshot
     from asr.assurance.dossier import build_item_dossier
     from tests.board_fixture import build_board
-    import tempfile
     with tempfile.TemporaryDirectory() as td:
         board = build_board(Path(td))
         snap = load_snapshot(board)

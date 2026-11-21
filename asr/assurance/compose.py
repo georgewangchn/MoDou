@@ -7,9 +7,8 @@ findings + a structured verdict; this module is the deterministic half.
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 # ── Deviation codes (Final-1.0 §7.2) ────────────────────────────────────────
 DEVIATION_CODES = {
@@ -187,7 +186,7 @@ SCHEMA_VERSION = "modou/assessment@1.0"
 
 def new_assessment_id() -> str:
     import uuid
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     return f"ASM-{stamp}-{uuid.uuid4().hex[:6]}"
 
 
@@ -203,7 +202,7 @@ class Assessment:
     findings: list[Finding] = field(default_factory=list)
     dropped_findings: list[dict] = field(default_factory=list)
     reassessment_of: str | None = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict:
         return {

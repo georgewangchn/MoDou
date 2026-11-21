@@ -1,6 +1,5 @@
 """CLI tests for `asr board-assess` (plumbing mode + mocked-LLM pipeline)."""
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest

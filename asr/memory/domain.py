@@ -140,11 +140,11 @@ class DomainMemory:
 
         # Enforce entry limit by keeping only last MAX_ENTRIES lines starting with "- ["
         lines = updated.split("\n")
-        entry_lines = [(i, l) for i, l in enumerate(lines) if l.strip().startswith("- [iter")]
+        entry_lines = [(i, line) for i, line in enumerate(lines) if line.strip().startswith("- [iter")]
         if len(entry_lines) > self.MAX_ENTRIES:
             # Remove oldest entries
             to_remove = set(idx for idx, _ in entry_lines[:-self.MAX_ENTRIES])
-            lines = [l for i, l in enumerate(lines) if i not in to_remove]
+            lines = [line for i, line in enumerate(lines) if i not in to_remove]
             updated = "\n".join(lines)
 
         # Enforce file size limit
@@ -152,19 +152,19 @@ class DomainMemory:
             # Keep the header + most recent entries
             lines = updated.split("\n")
             header_end = 0
-            for i, l in enumerate(lines):
-                if "## Recent Strategies" in l:
+            for i, line in enumerate(lines):
+                if "## Recent Strategies" in line:
                     header_end = i + 1
                     break
-            recent_lines = [l for l in lines[header_end:] if l.strip().startswith("- [") or l.strip().startswith("<!--")]
+            recent_lines = [line for line in lines[header_end:] if line.strip().startswith("- [") or line.strip().startswith("<!--")]
             # Keep last entries that fit
-            fitting = []
+            fitting: list[str] = []
             size = len("\n".join(lines[:header_end]))
-            for l in reversed(recent_lines):
-                if size + len(l) + 1 > self.MAX_FILE_SIZE:
+            for line in reversed(recent_lines):
+                if size + len(line) + 1 > self.MAX_FILE_SIZE:
                     break
-                fitting.insert(0, l)
-                size += len(l) + 1
+                fitting.insert(0, line)
+                size += len(line) + 1
             updated = "\n".join(lines[:header_end]) + "\n" + "\n".join(fitting)
 
         try:

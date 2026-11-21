@@ -11,13 +11,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 import yaml
 
 from asr.adapters.ousheng.snapshot import (
-    BoardSnapshot, DesignRecord, EvidenceEntry, WorkItem, _git,
+    BoardSnapshot,
+    DesignRecord,
+    EvidenceEntry,
+    WorkItem,
+    _git,
 )
 
 PAGE_CAP_BYTES = 8 * 1024  # per-page content cap; truncation is noted in-page
@@ -108,7 +111,7 @@ def _context_page(snapshot: BoardSnapshot, subject: str, kind: str, rules_ref: s
         "subject": subject, "subject_kind": kind,
         "protocol_version": PROTOCOL_VERSION,
         "rules_ref": rules_ref,
-        "assembled_at": datetime.now(timezone.utc).isoformat(),
+        "assembled_at": datetime.now(UTC).isoformat(),
         "caps": {"page_bytes": PAGE_CAP_BYTES},
     }, allow_unicode=True, sort_keys=False)
 

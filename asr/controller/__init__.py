@@ -1,3 +1,3 @@
-from asr.controller.convergence import ASRController, ConvergenceState, ConvergenceResult
+from asr.controller.convergence import ASRController, ConvergenceResult, ConvergenceState
 
 __all__ = ["ASRController", "ConvergenceState", "ConvergenceResult"]

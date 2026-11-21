@@ -1,26 +1,28 @@
 """Tests for ASR controller convergence module."""
 
-import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from asr.controller.convergence import (
-    ASRController, ConvergenceState, ConvergenceResult,
-    _count_failures, _EXPECTED_TYPES
-)
+from asr.agents.base import BaseAgent
 from asr.config.models import ASRConfig, ConvergenceConfig
+from asr.controller.convergence import (
+    _EXPECTED_TYPES,
+    ASRController,
+    ConvergenceResult,
+    ConvergenceState,
+    _count_failures,
+)
 from asr.events.models import (
-    EventType, AgentName,
-    TaskCreatedEvent, TestStartedEvent, TestFailedEvent, TestPassedEvent,
-    TestErrorEvent, SpecDiffFoundEvent, SpecAlignedEvent, PatchGeneratedEvent,
-    PatchAppliedEvent, ConvergedEvent, StuckEvent, ConvergenceIterationEvent
+    AgentName,
+    EventType,
+    TaskCreatedEvent,
+    TestErrorEvent,
+    TestFailedEvent,
+    TestPassedEvent,
 )
 from asr.events.store import EventStore
-from asr.spec.models import Specification
-from asr.agents.base import BaseAgent
 from asr.logger import ASRLogger
 
 

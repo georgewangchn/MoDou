@@ -3,25 +3,27 @@
 import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import patch
 
 import pytest
-import pytest_asyncio
 
+from asr.agents.analyzer import AnalysisReport, AnalyzerAgent
 from asr.agents.base import BaseAgent
 from asr.agents.builder import BuilderAgent
+from asr.agents.runner import AgentOrchestrator, AgentRunner
 from asr.agents.tester import TesterAgent
-from asr.agents.analyzer import AnalyzerAgent, AnalysisReport, StructuredFinding
-from asr.agents.runner import AgentRunner, AgentOrchestrator
-from asr.config.models import AgentConfig, ModelConfig, ASRConfig
+from asr.config.models import AgentConfig, ModelConfig
 from asr.events.models import (
-    EventType, AgentName, Event, TaskCreatedEvent, CodeGeneratedEvent,
-    TestStartedEvent, TestFailedEvent, TestPassedEvent, SpecDiffFoundEvent,
-    SpecAlignedEvent, AnalyzerFeedbackEvent, PatchGeneratedEvent, PatchRequestedEvent,
-    AnalyzeRequestedEvent, ErrorOccurredEvent,
+    AgentName,
+    AnalyzeRequestedEvent,
+    CodeGeneratedEvent,
+    Event,
+    EventType,
+    PatchRequestedEvent,
+    TaskCreatedEvent,
+    TestStartedEvent,
 )
 from asr.events.store import EventStore
-from asr.spec.models import Specification
 
 
 @pytest.fixture
