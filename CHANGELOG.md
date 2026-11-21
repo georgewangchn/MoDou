@@ -3,6 +3,33 @@
 本项目的全部显著变更记录在此。格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [3.1.0] — 2026-11-21
+
+主题：三 Runtime 统一体系的**高内聚低耦合**落地（设计基线 §1 硬约束一、§3.1
+内聚判据）。全部新能力标 **Experimental**。
+
+### 新增（Experimental）
+
+- **防腐层结构化**：中立 board 数据模型上移至 `asr/assurance/board_model.py`
+  （核心零组织运行时词汇）；`asr/adapters/base.py` 定义 `OrganizationAdapter`
+  协议与注册表——**第二个组织运行时接入 = 注册一个新 adapter，核心零改动**
+  （设计文档承诺从约定变为结构保证）。OuSheng adapter 照常工作，旧 import
+  路径保持兼容（re-export）。
+- **公共 API 面 v1**（`modou/public-api@1`）：`import asr` 即可用
+  `assess` / `run_verification` / `Assessment` / 四态常量；`run`（收敛插件）
+  刻意不再导出——它会改写项目，保持 CLI-only。
+- **Verifier Plugin SDK**：确定性验证器插件协议（`asr/plugins.py`），显式
+  启用（`asr assess --enable-verifier <name>`），第三方经 `modou.verifiers`
+  entry-point 组发现；插件异常降级为 `VERIFIER_ERROR` finding，永不崩溃评估、
+  永不促成 PASS。内置示例 `compile_check`（生产代码 ast 语法门，HIGH 级
+  finding）。
+- 通用只读 git 工具中立化（`asr/git_read.py`），核心不再借用 adapter 私有函数。
+
+### 依据
+
+设计基线 §10 不做清单排除"六对象 DEP 与事件机制"——本轮以 adapter 协议 +
+公共 API + 插件 SDK 落地跨系统集成，而非引入 DEP。
+
 ## [3.0.0] — 2026-11-20
 
 首个打标签的公开版本（此前无 release）。品牌名 MoDou（墨斗），技术标识

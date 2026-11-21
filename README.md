@@ -20,7 +20,7 @@ Builder 只作为**被评估的执行插件**，不参与评估判定。
 
 <br>
 
-[![Version](https://img.shields.io/badge/version-3.0.0-4CAF50?style=flat-square)](#)
+[![Version](https://img.shields.io/badge/version-3.1.0-4CAF50?style=flat-square)](#)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](#)
 [![CI](https://github.com/georgewangchn/MoDou/actions/workflows/ci.yml/badge.svg)](https://github.com/georgewangchn/MoDou/actions/workflows/ci.yml)
@@ -342,7 +342,10 @@ asr/
 | 软件工程收敛插件（Builder → Tester → Analyzer） | Implemented | 代码 + `tests/` 单元测试；不参与评估判定 |
 | RepairMode、Patch 限幅、Formal Guards、振荡检测、Circuit Breaker、退化回滚、Hysteresis、事件回放 | Implemented | 控制论收敛机制，见技术报告 v2.0 |
 | Assurance Core（Contract Registry / Deviation Engine / Feedback Controller 等） | Planned | 方案文档 §6.2；`asr assess` 提供最小可用子集，非完整 Core |
-| Analyzer / Verifier Plugin SDK、DEP 契约、跨系统集成 | Planned | 方案文档 §6.4–§6.5、§7、§10 阶段 5，本仓库未实现 |
+| 公共 API 面 v1（`modou/public-api@1`：`import asr` → `assess`/`Assessment`/四态常量） | Experimental | 3.1.0 起；库方式嵌入（cruise/CI/决策反馈），`run` 保持 CLI-only |
+| 防腐层：组织运行时 Adapter 协议（`OrganizationAdapter` 注册表） | Experimental | 3.1.0 起；核心零组织运行时词汇（`asr/assurance/board_model.py`），第二个组织运行时接入 = 注册新 adapter，核心零改动 |
+| Verifier Plugin SDK（`--enable-verifier`，`modou.verifiers` entry-point；内置 `compile_check`） | Experimental | 3.1.0 起；确定性验证器插件，异常降级 finding 永不崩溃/永不促成 PASS |
+| DEP 六对象与事件机制 | Planned（按设计基线 §10 暂不做） | 跨系统集成经公共 API + adapter 协议 + 退出码契约实现 |
 | 模式 C：绳上保证（`asr board-assess`，OuSheng board 两级偏差分析） | Experimental | P1–P4 完成：影子两级分析、四分类对账、注入校准 **CALIBRATED**（检出 100%×3 轮、误报 0、纪律 0、PM precision 90% n=21）、写回闭环（T10 指针证据 + fingerprint 幂等 + 半程恢复）、定时巡检 `board-watch`（cycle 隔离/fetch 定 sha/trend.jsonl/last-run.json 非阻塞信号）与 `board-trend`（状态分布/代码直方/复发与解决指纹，口径显式）。生产启用需 PM 注册 `modou` actor 并授权 |
 
 Implemented 依据代码与测试标注，不代表已完成生产可用性、覆盖率或性能验证。
