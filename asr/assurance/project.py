@@ -12,7 +12,6 @@ AnalyzerAgent 自行创建并删除。
 """
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import shutil
@@ -20,7 +19,7 @@ import subprocess
 import sys
 import tempfile
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +27,7 @@ import yaml
 
 from asr.agents.tester import _parse_pytest_output
 from asr.config.models import AgentConfig
-from asr.spec.models import Specification
+from asr.spec.models import AcceptanceCriteria, Constraint, Specification
 
 STATUS_PASS = "PASS"
 STATUS_DEVIATION = "DEVIATION"
@@ -105,7 +104,7 @@ class Assessment:
     findings: list[Finding] = field(default_factory=list)
     acceptance: list[dict[str, Any]] = field(default_factory=list)
     analyzer_mode: str = "skipped"
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -179,10 +178,11 @@ def _load_spec(project_dir: Path, spec_path: Path | None) -> tuple[Specification
             "",
         )
         constraints = [
-            {"name": c, "type": "must"} for c in _bullets_under(text, ("Constraints", "约束"))
+            Constraint(name=c, type="must")
+            for c in _bullets_under(text, ("Constraints", "约束"))
         ]
         acceptance = [
-            {"name": a} for a in _bullets_under(
+            AcceptanceCriteria(name=a) for a in _bullets_under(
                 text, ("Acceptance", "验收", "Testing Strategy", "测试策略")
             )
         ]
@@ -371,6 +371,11 @@ def _determine_status(
     if verification.failed or verification.errors or blocking:
         return STATUS_DEVIATION
 
+    # Analyzer 显式开启但只产出不可核验结论（降级/解析失败）时，语义维度
+    # 证据不足：不得伪造 PASS，整体降为 INCONCLUSIVE（铁律：执行完成≠目标达成）。
+    if any(f.code == "INCONCLUSIVE" for f in findings):
+        return STATUS_INCONCLUSIVE
+
     # 没有可核验的验收标准时，测试全绿只说明“执行完成”，不等于“目标达成”（§3.2）
     if not acceptance or not all(a.get("evidenced") for a in acceptance):
         return STATUS_INCONCLUSIVE
@@ -431,6 +436,10 @@ async def assess(
     analyzer_findings, analyzer_mode = await _analyzer_findings(
         project_dir, verification, use_analyzer=use_analyzer
     )
+    # 语义层降级（非结构化产出）时 mode 必须如实，不得报告 completed
+    if analyzer_mode == "completed" and any(
+            f.code == "INCONCLUSIVE" for f in analyzer_findings):
+        analyzer_mode = "degraded"
 
     findings = gaps + analyzer_findings
     status = _determine_status(verification, findings, acceptance, spec_source, stdout)

@@ -8,11 +8,11 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from asr.assurance import (
-    Finding,
     STATUS_BLOCKED,
     STATUS_DEVIATION,
     STATUS_INCONCLUSIVE,
     STATUS_PASS,
+    Finding,
     Verification,
     _check_acceptance,
     _determine_status,
@@ -82,6 +82,23 @@ def test_determine_status_rules():
     assert _determine_status(green, [], [], "spec.yaml", "") == STATUS_INCONCLUSIVE
     assert _determine_status(Verification(), [], [], "(none)", "") == STATUS_INCONCLUSIVE
     assert _determine_status(green, [], [], "spec.yaml", "TIMEOUT: 600s") == STATUS_BLOCKED
+
+
+def test_determine_status_analyzer_degradation_never_pass():
+    """Analyzer 显式开启但降级（INCONCLUSIVE finding）时不得伪造 PASS。
+
+    回归：模拟实验室 S1-R7 发现语义层失败 + 测试全绿 + 验收有证据
+    曾组合出 PASS/exit 0，违反"证据不足不得默认 PASS"铁律。
+    """
+    green = Verification(total=10, passed=10)
+    evidenced = [{"name": "a", "evidenced": True}]
+    degraded = Finding(code="INCONCLUSIVE", message="Analyzer 产出非结构化结论",
+                       severity="LOW", source="analyzer")
+    assert _determine_status(green, [degraded], evidenced, "spec.yaml", "") \
+        == STATUS_INCONCLUSIVE
+    # DEVIATION 级 finding 仍优先于 INCONCLUSIVE 降级
+    both = [degraded, Finding(code="QUALITY_FAILURE", message="x", severity="HIGH")]
+    assert _determine_status(green, both, evidenced, "spec.yaml", "") == STATUS_DEVIATION
 
 
 def test_assess_does_not_invoke_builder(tmp_path):
